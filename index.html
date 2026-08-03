@@ -232,8 +232,10 @@
   .status-pill.green{background:var(--green-soft); color:var(--green);}
   .status-pill.amber{background:var(--amber-soft); color:var(--amber);}
   .status-pill.red{background:var(--red-soft); color:var(--red);}
-  .row-remove{background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:15px;}
+  .row-remove, .clear-month-btn{background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:14px; padding:4px 6px;}
   .row-remove:hover{color:var(--red);}
+  .clear-month-btn:hover{color:var(--amber);}
+  .row-actions{white-space:nowrap;}
 
   .table-foot{padding:14px 20px; display:flex; justify-content:flex-end;}
 
@@ -695,7 +697,7 @@ function renderTeamTable(workingDays){
     return `
     <tr data-id="${m.id}">
       <td><input type="text" class="member-name" value="${m.name}"></td>
-      <td class="num-cell">${c.standardTarget.toFixed(1)}h</td>
+      <td class="num-cell standard-target-cell">${c.standardTarget.toFixed(1)}h</td>
       <td>
         <div class="leave-cell">
           ${md.leave.map((l,idx)=>`
@@ -709,7 +711,7 @@ function renderTeamTable(workingDays){
           <button class="add-leave-btn">+ add</button>
         </div>
       </td>
-      <td class="num-cell">${c.netTarget.toFixed(1)}h</td>
+      <td class="num-cell net-target-cell">${c.netTarget.toFixed(1)}h</td>
       <td>
         <div class="hm-input">
           <input type="number" class="actual-hours" value="${md.hours}" min="0"><span>h</span>
@@ -718,11 +720,27 @@ function renderTeamTable(workingDays){
       </td>
       <td class="pct-cell" style="color:var(--${c.status==='green'?'green':c.status==='amber'?'amber':'red'})">${c.utilization.toFixed(1)}%</td>
       <td><span class="status-pill ${c.status}">${c.status==='green'?'🟢 Optimal':c.status==='amber'?'🟡 Moderate':'🔴 Action'}</span></td>
-      <td><button class="row-remove" title="Remove">✕</button></td>
+      <td class="row-actions">
+        <button class="clear-month-btn" title="Clear ${m.name}'s hours for this month only">⌫</button>
+        <button class="row-remove" title="Remove ${m.name} from the team (all months)">🗑</button>
+      </td>
     </tr>`;
   }).join('');
 
   attachRowHandlers(workingDays);
+}
+
+function updateRowComputed(row, member, workingDays){
+  const c = computeMember(member, workingDays);
+  row.querySelector('.standard-target-cell').textContent = c.standardTarget.toFixed(1)+'h';
+  row.querySelector('.net-target-cell').textContent = c.netTarget.toFixed(1)+'h';
+  const pctCell = row.querySelector('.pct-cell');
+  pctCell.textContent = c.utilization.toFixed(1)+'%';
+  pctCell.style.color = `var(--${c.status==='green'?'green':c.status==='amber'?'amber':'red'})`;
+  const statusPill = row.querySelector('.status-pill');
+  statusPill.className = 'status-pill ' + c.status;
+  statusPill.textContent = c.status==='green'?'🟢 Optimal':c.status==='amber'?'🟡 Moderate':'🔴 Action';
+  return c;
 }
 
 function attachRowHandlers(workingDays){
@@ -731,31 +749,69 @@ function attachRowHandlers(workingDays){
     const member = state.members.find(m=>m.id===id);
     const md = getMonthData(member, state.year, state.month);
 
-    row.querySelector('.member-name').addEventListener('input', e=>{ member.name = e.target.value; });
-    row.querySelector('.actual-hours').addEventListener('input', e=>{ md.hours = e.target.value; renderTeamTable(workingDays); renderSummaryCards(workingDays); });
-    row.querySelector('.actual-minutes').addEventListener('input', e=>{ md.minutes = e.target.value; renderTeamTable(workingDays); renderSummaryCards(workingDays); });
+    row.querySelector('.member-name').addEventListener('input', e=>{
+      member.name = e.target.value; scheduleSave();
+    });
+
+    // Hours/minutes/leave-hours: patch computed cells only, never rebuild the
+    // inputs — rebuilding on every keystroke was what broke typing and the
+    // up/down spinner arrows (it stole focus after each character).
+    row.querySelector('.actual-hours').addEventListener('input', e=>{
+      md.hours = e.target.value;
+      updateRowComputed(row, member, workingDays);
+      renderSummaryCards(workingDays);
+      scheduleSave();
+    });
+    row.querySelector('.actual-minutes').addEventListener('input', e=>{
+      md.minutes = e.target.value;
+      updateRowComputed(row, member, workingDays);
+      renderSummaryCards(workingDays);
+      scheduleSave();
+    });
 
     row.querySelectorAll('.leave-type').forEach(sel=>{
-      sel.addEventListener('change', e=>{ md.leave[+e.target.dataset.idx].type = e.target.value; renderSummaryCards(workingDays); });
+      sel.addEventListener('change', e=>{
+        md.leave[+e.target.dataset.idx].type = e.target.value;
+        renderSummaryCards(workingDays); scheduleSave();
+      });
     });
     row.querySelectorAll('.leave-hours').forEach(inp=>{
-      inp.addEventListener('input', e=>{ md.leave[+e.target.dataset.idx].hours = e.target.value; renderTeamTable(workingDays); renderSummaryCards(workingDays); });
+      inp.addEventListener('input', e=>{
+        md.leave[+e.target.dataset.idx].hours = e.target.value;
+        updateRowComputed(row, member, workingDays);
+        renderSummaryCards(workingDays);
+        scheduleSave();
+      });
     });
     row.querySelectorAll('.leave-remove').forEach(btn=>{
-      btn.addEventListener('click', e=>{ md.leave.splice(+e.target.dataset.idx,1); renderTeamTable(workingDays); renderSummaryCards(workingDays); });
+      btn.addEventListener('click', e=>{
+        md.leave.splice(+e.target.dataset.idx,1);
+        renderTeamTable(workingDays); renderSummaryCards(workingDays); scheduleSave();
+      });
     });
     row.querySelector('.add-leave-btn').addEventListener('click', ()=>{
       md.leave.push({type:"Annual Leave", hours:0});
-      renderTeamTable(workingDays); renderSummaryCards(workingDays);
+      renderTeamTable(workingDays); renderSummaryCards(workingDays); scheduleSave();
     });
+
+    // Clear ONLY the currently viewed month for this person — other months untouched.
+    row.querySelector('.clear-month-btn').addEventListener('click', ()=>{
+      const label = `${monthNames[state.month]} ${state.year}`;
+      if(confirm(`Clear ${member.name}'s hours and leave for ${label}? This does not affect any other month.`)){
+        delete member.monthly[`${state.year}-${state.month}`];
+        renderTeamTable(workingDays); renderSummaryCards(workingDays); scheduleSave();
+      }
+    });
+
+    // Remove the person entirely, from every month.
     row.querySelector('.row-remove').addEventListener('click', ()=>{
       const monthsLogged = Object.keys(member.monthly).length;
       const warning = monthsLogged > 0
-        ? `Remove ${member.name}? This deletes their record for every month (${monthsLogged} logged), not just ${monthNames[state.month]}.`
-        : `Remove ${member.name}?`;
+        ? `Remove ${member.name} from the team? This deletes their record for every month (${monthsLogged} logged), not just ${monthNames[state.month]}. If you only want to clear this month, use the ⌫ button instead.`
+        : `Remove ${member.name} from the team?`;
       if(confirm(warning)){
         state.members = state.members.filter(m=>m.id!==id);
-        renderTeamTable(workingDays); renderSummaryCards(workingDays);
+        renderTeamTable(workingDays); renderSummaryCards(workingDays); scheduleSave();
       }
     });
   });
