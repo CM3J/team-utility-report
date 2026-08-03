@@ -6,6 +6,9 @@
 <title>Team Utilization Dashboard — SA</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
   :root{
     --bg:#0E1113;
@@ -72,6 +75,25 @@
     font-size:15px; font-weight:600; cursor:pointer; outline:none;
   }
   .month-toggle select option{background:var(--surface-alt); color:var(--text);}
+
+  .sync-pill{
+    display:flex; align-items:center; gap:7px; font-family:'JetBrains Mono',monospace; font-size:11px;
+    color:var(--text-muted); background:var(--surface); border:1px solid var(--border); border-radius:999px;
+    padding:6px 12px;
+  }
+  .sync-pill .sync-dot{width:7px; height:7px; border-radius:50%; background:var(--text-faint);}
+  .sync-pill.saving .sync-dot{background:var(--amber); animation:pulse 1s infinite;}
+  .sync-pill.synced .sync-dot{background:var(--green);}
+  .sync-pill.error .sync-dot{background:var(--red);}
+  .sync-pill.offline .sync-dot{background:var(--text-faint);}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+
+  .config-banner{
+    background:var(--amber-soft); border:1px solid rgba(232,169,59,0.35); color:var(--amber);
+    border-radius:var(--radius); padding:14px 18px; margin-bottom:22px; font-size:12.5px; line-height:1.6;
+  }
+  .config-banner code{background:rgba(0,0,0,0.25); padding:1px 6px; border-radius:4px; font-family:'JetBrains Mono',monospace;}
+  .config-banner strong{color:var(--text);}
 
   /* ---------- Cards row ---------- */
   .cards{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px;}
@@ -238,6 +260,17 @@
   </div>
 </div>
 
+<div class="sync-pill" id="syncPill" style="margin-bottom:20px; width:fit-content;">
+  <span class="sync-dot"></span><span id="syncLabel">Local only</span>
+</div>
+
+<div class="config-banner" id="configBanner" style="display:none;">
+  <strong>Firebase isn't connected yet.</strong> Data is only kept in this browser tab right now (use Export/Import JSON to save it).
+  To enable auto-sync: create a Firestore project, paste your web app config into <code>firebaseConfig</code> near the top of the
+  <code>&lt;script&gt;</code> block in <code>index.html</code>, enable <strong>Anonymous</strong> sign-in under Authentication → Sign-in method,
+  and set your Firestore rules to allow authenticated reads/writes (rules snippet is in the code comment above <code>firebaseConfig</code>).
+</div>
+
 <div class="cards" id="summaryCards"></div>
 
 <div class="layout-row">
@@ -289,6 +322,7 @@
   <div class="table-head-row">
     <h3>Team Utilization — <span id="tableMonthLabel"></span></h3>
     <div>
+      <button class="btn-ghost" id="refreshFirebaseBtn" style="display:none;">Refresh from Firebase</button>
       <button class="btn-ghost" id="exportBtn">Export JSON</button>
       <button class="btn-ghost" id="importBtn">Import JSON</button>
       <button class="btn-ghost" id="importTimesheetBtn">Import Timesheet CSV</button>
@@ -417,6 +451,103 @@ function getWorkingDaysInMonth(year, monthIndex, holidays){
 }
 
 /* =========================================================
+   FIREBASE SYNC
+   ---------------------------------------------------------
+   1. Create a Firebase project → Firestore Database (production mode is fine).
+   2. Authentication → Sign-in method → enable "Anonymous".
+   3. Project settings → your web app → copy the config object into firebaseConfig below.
+   4. Firestore → Rules, paste:
+        rules_version = '2';
+        service cloud.firestore {
+          match /databases/{database}/documents {
+            match /utilizationDashboard/{docId} {
+              allow read, write: if request.auth != null;
+            }
+          }
+        }
+   That's it — every teammate who opens the hosted page auto-signs-in anonymously
+   and reads/writes the same shared document, with autosave ~1s after each edit.
+   ========================================================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyDG9WqVVxcT0cz0XKNXSWrppUqI6MBmJpc",
+  authDomain: "diginauts-team-utilization.firebaseapp.com",
+  projectId: "diginauts-team-utilization",
+  storageBucket: "diginauts-team-utilization.firebasestorage.app",
+  messagingSenderId: "298561017537",
+  appId: "1:298561017537:web:a646e8560a01eda8ac2640"
+};
+
+const FIREBASE_ENABLED = firebaseConfig.apiKey !== "YOUR_API_KEY";
+let db = null;
+let stateDocRef = null;
+let saveTimer = null;
+let suppressNextSave = false;
+
+function setSyncStatus(mode, label){
+  const pill = document.getElementById('syncPill');
+  pill.className = 'sync-pill ' + mode;
+  document.getElementById('syncLabel').textContent = label;
+}
+
+async function initFirebase(){
+  if(!FIREBASE_ENABLED){
+    document.getElementById('configBanner').style.display = 'block';
+    setSyncStatus('offline', 'Local only — not synced');
+    return false;
+  }
+  try{
+    firebase.initializeApp(firebaseConfig);
+    await firebase.auth().signInAnonymously();
+    db = firebase.firestore();
+    stateDocRef = db.collection('utilizationDashboard').doc('state');
+    document.getElementById('refreshFirebaseBtn').style.display = 'inline-block';
+
+    const snap = await stateDocRef.get();
+    if(snap.exists){
+      suppressNextSave = true;
+      state = Object.assign({}, state, snap.data());
+    } else {
+      await stateDocRef.set(JSON.parse(JSON.stringify(state)));
+    }
+    setSyncStatus('synced', 'Synced to Firebase');
+    return true;
+  }catch(err){
+    console.error('Firebase init failed:', err);
+    setSyncStatus('error', 'Firebase error — check console');
+    document.getElementById('configBanner').style.display = 'block';
+    return false;
+  }
+}
+
+function scheduleSave(){
+  if(!FIREBASE_ENABLED || !stateDocRef) return;
+  if(suppressNextSave){ suppressNextSave = false; return; }
+  setSyncStatus('saving', 'Saving…');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    try{
+      await stateDocRef.set(JSON.parse(JSON.stringify(state)));
+      setSyncStatus('synced', 'Synced to Firebase');
+    }catch(err){
+      console.error('Save failed:', err);
+      setSyncStatus('error', 'Save failed — check console');
+    }
+  }, 800);
+}
+
+async function refreshFromFirebase(){
+  if(!stateDocRef) return;
+  const snap = await stateDocRef.get();
+  if(snap.exists){
+    suppressNextSave = true;
+    state = Object.assign({}, state, snap.data());
+    populateSelectors(); render();
+    setSyncStatus('synced', 'Refreshed from Firebase');
+  }
+}
+document.getElementById('refreshFirebaseBtn').addEventListener('click', refreshFromFirebase);
+
+/* =========================================================
    STATE
    Actuals are stored PER MONTH per member, keyed "year-monthIndex",
    so toggling the date shows/edits that month's own figures.
@@ -493,6 +624,7 @@ function render(){
   });
   document.getElementById('formulaFoot').textContent =
     `Formula: Net Target = (Working Days × ${state.dailyHours}h × (1 − Closure%)) − Leave Hours · Utilization = Actual ÷ Net Target × 100`;
+  scheduleSave();
 
   const holidays = currentHolidays();
   const workingDays = getWorkingDaysInMonth(state.year, state.month, holidays);
@@ -806,8 +938,13 @@ document.getElementById('exportCsvBtn').addEventListener('click', ()=>{
 /* =========================================================
    INIT
    ========================================================= */
-populateSelectors();
-render();
+(async function start(){
+  populateSelectors();
+  render();
+  await initFirebase();
+  populateSelectors(); // in case remote year/month differ from local default
+  render();
+})();
 </script>
 </body>
 </html>
