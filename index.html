@@ -288,10 +288,10 @@
     </div>
 
     <div class="field">
-      <label>Business closure this month</label>
-      <div class="closure-row">
-        <input type="range" id="closureSlider" min="0" max="100" step="1" value="0">
-        <span class="closure-val"><span id="closureVal">0</span>%</span>
+      <label>Office closed (hours this month)</label>
+      <input type="number" id="closureHoursInput" min="0" step="0.5" value="0">
+      <div class="foot" style="margin-top:6px; color:var(--text-faint); font-size:11px;">
+        Subtracted from every team member's target for this month. E.g. a 2-day December shutdown at an 8h day = 16 hours.
       </div>
     </div>
 
@@ -580,7 +580,7 @@ const today = new Date();
 let state = {
   year: 2026,
   month: 5, // June 2026 — the latest month with a full data set in the source sheet
-  closurePct: 0,
+  closureHours: 0, // hours the office was closed this month (subtracted from everyone's target)
   dailyHours: 8, // toggled between 6h and 8h working day
   customHolidays: {}, // keyed by year -> [{iso,name}]
   members: Object.entries(SEED_2026).map(([name, data]) => mkMember(name, data)),
@@ -617,15 +617,14 @@ function currentHolidays(){
 }
 
 function render(){
-  document.getElementById('closureSlider').value = state.closurePct;
-  document.getElementById('closureVal').textContent = state.closurePct;
+  document.getElementById('closureHoursInput').value = state.closureHours;
   document.getElementById('holidayYearLabel').textContent = state.year;
   document.getElementById('tableMonthLabel').textContent = monthNames[state.month]+' '+state.year;
   document.querySelectorAll('.daily-opt').forEach(btn=>{
     btn.classList.toggle('active', +btn.dataset.val === state.dailyHours);
   });
   document.getElementById('formulaFoot').textContent =
-    `Formula: Net Target = (Working Days × ${state.dailyHours}h × (1 − Closure%)) − Leave Hours · Utilization = Actual ÷ Net Target × 100`;
+    `Formula: Net Target = (Working Days × ${state.dailyHours}h) − Closure Hours − Leave Hours · Utilization = Actual ÷ Net Target × 100`;
   scheduleSave();
 
   const holidays = currentHolidays();
@@ -654,7 +653,7 @@ function renderCalendar(holidays, workingDays){
   const daysInMonth = new Date(Date.UTC(state.year, state.month+1, 0)).getUTCDate();
   const firstDow = new Date(Date.UTC(state.year, state.month, 1)).getUTCDay();
   const holidaySet = new Set(holidays.filter(h=>h.date.getUTCFullYear()===state.year && h.date.getUTCMonth()===state.month).map(h=>h.iso));
-  const closureActive = state.closurePct > 0;
+  const closureActive = state.closureHours > 0;
 
   let html = dowLabels.map(l=>`<div class="cal-dow">${l}</div>`).join('');
   for(let i=0;i<firstDow;i++) html += `<div class="cal-cell empty"></div>`;
@@ -680,7 +679,7 @@ function computeMember(m, workingDays){
   const md = getMonthData(m, state.year, state.month);
   const standardTarget = workingDays * state.dailyHours;
   const leaveHours = memberLeaveHours(md);
-  const netTarget = Math.max(0, standardTarget * (1 - state.closurePct/100) - leaveHours);
+  const netTarget = Math.max(0, standardTarget - (parseFloat(state.closureHours)||0) - leaveHours);
   const actual = (parseFloat(md.hours)||0) + (parseFloat(md.minutes)||0)/60;
   const utilization = netTarget > 0 ? (actual/netTarget)*100 : 0;
   let status = 'green';
@@ -831,7 +830,7 @@ function renderSummaryCards(workingDays){
   const cards = [
     {label:'Avg Team Utilization', value: avgUtil.toFixed(1)+'%', cls:avgClass, foot:`Across ${state.members.length} team member${state.members.length!==1?'s':''}`},
     {label:'Total Hours Logged', value: totalActual.toFixed(1)+'h', cls:'', foot:`Target: ${totalTarget.toFixed(1)}h`},
-    {label:'Working Days', value: workingDays, cls:'', foot:`${monthNames[state.month]} ${state.year} · ${state.closurePct}% closure applied`},
+    {label:'Working Days', value: workingDays, cls:'', foot:`${monthNames[state.month]} ${state.year} · ${state.closureHours}h closure applied`},
     {label:'Flagged Team Members', value: (amber+red), cls:(red>0?'red':amber>0?'amber':'green'), foot:null, split:{green,amber,red}},
   ];
 
@@ -861,8 +860,8 @@ document.getElementById('nextMonth').addEventListener('click', ()=>{
   state.month++; if(state.month>11){state.month=0; state.year++;}
   populateSelectors(); render();
 });
-document.getElementById('closureSlider').addEventListener('input', e=>{
-  state.closurePct = +e.target.value; render();
+document.getElementById('closureHoursInput').addEventListener('input', e=>{
+  state.closureHours = e.target.value; render();
 });
 document.querySelectorAll('.daily-opt').forEach(btn=>{
   btn.addEventListener('click', ()=>{ state.dailyHours = +btn.dataset.val; render(); });
