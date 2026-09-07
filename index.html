@@ -720,6 +720,7 @@ function closeMappingModal(){
 }
 
 async function applyMappingAndSync(){
+  try {
   if(!pendingClockifyData) return;
 
   // Collect the choices from the modal.
@@ -783,13 +784,21 @@ async function applyMappingAndSync(){
   if(skippedIgnored.length) parts.push(`\n⊘ Ignored: ${skippedIgnored.join(', ')}`);
   if(unmapped.length) parts.push(`\n? Unmapped (choose someone next time): ${unmapped.join(', ')}`);
   alert(parts.join(''));
+  } catch(err) {
+    console.error('Sync failed:', err);
+    alert('Sync failed: ' + err.message + '\n\nCheck the browser console (F12) for details.');
+  }
 }
 
 document.getElementById('mapModalClose').addEventListener('click', closeMappingModal);
 document.getElementById('mapModalOverlay').addEventListener('click', e=>{
   if(e.target.id === 'mapModalOverlay') closeMappingModal();
 });
-document.getElementById('mapModalSyncBtn').addEventListener('click', applyMappingAndSync);
+// Event delegation so the handler fires even if the button element is
+// replaced by a re-render — safer than direct binding.
+document.getElementById('mapModalOverlay').addEventListener('click', e=>{
+  if(e.target.id === 'mapModalSyncBtn') applyMappingAndSync();
+});
 let db = null;
 let stateDocRef = null;
 let saveTimer = null;
