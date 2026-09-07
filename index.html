@@ -216,6 +216,55 @@
   .add-absence-form .row{display:flex; gap:8px;}
   .add-absence-form .row > *{flex:1;}
 
+  /* ---------- Mapping table (Clockify sync modal) ---------- */
+  .map-table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  .map-table th{
+    text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint);
+    padding:6px 10px; border-bottom:1px solid var(--border);
+  }
+  .map-table td{padding:8px 10px; border-bottom:1px solid var(--border-soft); vertical-align:middle;}
+  .map-table td:first-child{width:45%;}
+  .map-table .hours-sub{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-faint); margin-top:2px;}
+  .map-select{
+    width:100%; background:var(--surface-alt); border:1px solid var(--border); border-radius:6px;
+    color:var(--text); padding:6px 8px; font-size:12.5px; outline:none;
+  }
+  .map-select:focus{border-color:var(--accent);}
+
+  /* ---------- Hours cell (inline) ---------- */
+  .hours-display{
+    display:inline-flex; align-items:center; gap:8px; background:var(--surface-alt);
+    border:1px solid var(--border); border-radius:7px; padding:6px 10px; cursor:pointer;
+    font-family:'JetBrains Mono',monospace; font-size:13px; transition:border-color .15s;
+  }
+  .hours-display:hover{border-color:var(--accent);}
+  .hours-display .h-value{font-weight:600;}
+  .hours-display .h-edit{color:var(--text-faint); font-size:11px;}
+  .hours-editor{
+    display:inline-flex; align-items:center; gap:4px; background:var(--surface-alt);
+    border:1px solid var(--accent); border-radius:7px; padding:4px 6px;
+  }
+  .hours-editor input{
+    width:46px; background:transparent; border:none; color:var(--text);
+    font-family:'JetBrains Mono',monospace; font-size:13px; text-align:right; outline:none;
+  }
+  .hours-editor span{color:var(--text-faint); font-size:11px;}
+  .hours-editor button{
+    background:var(--accent); color:#fff; border:none; border-radius:5px;
+    padding:3px 8px; font-size:11px; cursor:pointer; margin-left:4px;
+  }
+
+  /* ---------- Manual / source badges ---------- */
+  .manual-badge, .source-badge{
+    display:inline-block; font-family:'JetBrains Mono',monospace; font-size:9.5px;
+    padding:1px 6px; border-radius:4px; margin-left:6px; vertical-align:middle;
+    text-transform:uppercase; letter-spacing:0.04em; cursor:default;
+  }
+  .manual-badge{background:var(--amber-soft); color:var(--amber);}
+  .manual-badge.releasable{cursor:pointer;}
+  .manual-badge.releasable:hover{background:var(--amber); color:var(--bg);}
+  .source-badge{background:var(--accent-soft); color:var(--accent);}
+
   /* ---------- Team table ---------- */
   .table-panel{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;}
   .table-head-row{display:flex; justify-content:space-between; align-items:center; padding:18px 20px; border-bottom:1px solid var(--border);}
@@ -401,6 +450,18 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="mapModalOverlay">
+  <div class="modal-card" style="position:relative; max-width:540px;">
+    <button class="modal-close btn-ghost" id="mapModalClose" style="padding:6px 10px;">✕</button>
+    <h3 id="mapModalTitle">Sync from Clockify</h3>
+    <div id="mapModalBody" style="margin-top:14px;"></div>
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px; border-top:1px solid var(--border); padding-top:14px;">
+      <button class="btn-ghost" onclick="document.getElementById('mapModalClose').click()">Cancel</button>
+      <button class="btn-primary" id="mapModalSyncBtn">Apply sync</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="dayModalOverlay">
   <div class="modal-card" style="position:relative;">
     <button class="modal-close btn-ghost" id="dayModalClose" style="padding:6px 10px;">✕</button>
@@ -562,13 +623,23 @@ async function syncFromClockify(){
     alert("Clockify isn't connected yet. Deploy the Cloudflare Worker (see clockify-worker.js) and paste its URL into CLOCKIFY_WORKER_URL near the top of index.html's <script>.");
     return;
   }
+
+  // Guardrail: never sync into months before Aug 2026. Preserves seed data,
+  // pre-Clockify hand entries, and July 2026 which is the last month you
+  // asked to protect.
+  const beforeCutoff = state.year < 2026 || (state.year === 2026 && state.month < 7); // month 7 = Aug (0-indexed)
+  if(beforeCutoff){
+    alert(`Sync is disabled for ${monthNames[state.month]} ${state.year}.\n\nClockify sync only writes to August 2026 and later, so earlier data (seed and hand-entered) stays protected.`);
+    return;
+  }
+
   const btn = document.getElementById('syncClockifyBtn');
   const originalLabel = btn.textContent;
-  btn.textContent = 'Syncing…';
+  btn.textContent = 'Fetching…';
   btn.disabled = true;
 
   try{
-    const monthNum = state.month + 1; // Clockify sync endpoint takes 1-12
+    const monthNum = state.month + 1;
     const res = await fetch(`${CLOCKIFY_WORKER_URL}/?year=${state.year}&month=${monthNum}`);
     const data = await res.json();
     if(!res.ok || data.error){
@@ -576,33 +647,9 @@ async function syncFromClockify(){
       return;
     }
 
-    const clockifyNames = Object.keys(data);
-    const matched = [];
-    const unmatched = [];
-
-    clockifyNames.forEach(cName=>{
-      const member = state.members.find(m => m.name.trim().toLowerCase() === cName.trim().toLowerCase());
-      if(member){
-        const key = `${state.year}-${state.month}`;
-        const existing = member.monthly[key];
-        member.monthly[key] = {
-          hours: data[cName].hours,
-          minutes: data[cName].minutes,
-          leave: existing ? existing.leave : []
-        };
-        matched.push(cName);
-      } else {
-        unmatched.push(cName);
-      }
-    });
-
-    render();
-
-    let msg = `Synced ${matched.length} team member(s) for ${monthNames[state.month]} ${state.year}.`;
-    if(unmatched.length){
-      msg += `\n\nNo dashboard match for these Clockify names (rename to match, or add them as a team member first):\n- ${unmatched.join('\n- ')}`;
-    }
-    alert(msg);
+    // Open the mapping modal instead of syncing straight away. The modal's
+    // Sync button is what actually writes to state and Firebase.
+    openMappingModal(data);
   }catch(err){
     console.error(err);
     alert('Clockify sync failed: ' + err.message);
@@ -612,6 +659,137 @@ async function syncFromClockify(){
   }
 }
 document.getElementById('syncClockifyBtn').addEventListener('click', syncFromClockify);
+
+/* ---------- Name-mapping modal ---------- */
+// state.clockifyMappings maps a Clockify name -> a dashboardMemberId, or the
+// string "ignore" to skip, or "new" (transient) meaning "create a new member
+// with this name". Saved to Firebase so mappings are one-time setup.
+let pendingClockifyData = null;
+
+function openMappingModal(clockifyData){
+  pendingClockifyData = clockifyData;
+  const overlay = document.getElementById('mapModalOverlay');
+  const body = document.getElementById('mapModalBody');
+  const mappings = state.clockifyMappings || {};
+
+  const rows = Object.entries(clockifyData).map(([cName, hm])=>{
+    // Guess the mapping if not previously set: first, exact case-insensitive
+    // match on full name; then a first-name match.
+    let current = mappings[cName];
+    if(!current){
+      const exact = state.members.find(m => m.name.trim().toLowerCase() === cName.trim().toLowerCase());
+      if(exact) current = exact.id;
+      else {
+        const firstName = cName.trim().split(/\s+/)[0].toLowerCase();
+        const firstMatch = state.members.find(m => m.name.trim().toLowerCase() === firstName);
+        if(firstMatch) current = firstMatch.id;
+      }
+    }
+    const totalH = hm.hours + (hm.minutes/60);
+    const formatted = `${hm.hours}h ${String(hm.minutes).padStart(2,'0')}m`;
+    return `
+      <tr data-cname="${cName.replace(/"/g,'&quot;')}">
+        <td><strong>${cName}</strong><div class="hours-sub">${formatted}</div></td>
+        <td>
+          <select class="map-select">
+            <option value="">— pick one —</option>
+            <option value="ignore" ${current==='ignore'?'selected':''}>⊘ Ignore (don't sync)</option>
+            <option value="new" ${current==='new'?'selected':''}>+ Create new member "${cName}"</option>
+            <option disabled>──────────</option>
+            ${state.members.map(m=>`<option value="${m.id}" ${current===m.id?'selected':''}>${m.name}</option>`).join('')}
+          </select>
+        </td>
+      </tr>`;
+  }).join('');
+
+  body.innerHTML = `
+    <p style="color:var(--text-muted); font-size:12.5px; margin:0 0 14px;">
+      Map each Clockify name to a dashboard team member. Your choices are remembered — you only set this up once.
+      Any cell you've manually edited (marked <span class="manual-badge">manual</span>) will be skipped.
+    </p>
+    <table class="map-table"><thead><tr><th>Clockify</th><th>Maps to →</th></tr></thead><tbody>${rows}</tbody></table>
+  `;
+
+  document.getElementById('mapModalTitle').textContent = `Sync ${monthNames[state.month]} ${state.year} — review mappings`;
+  overlay.classList.add('open');
+}
+
+function closeMappingModal(){
+  document.getElementById('mapModalOverlay').classList.remove('open');
+  pendingClockifyData = null;
+}
+
+async function applyMappingAndSync(){
+  if(!pendingClockifyData) return;
+
+  // Collect the choices from the modal.
+  const chosen = {};
+  document.querySelectorAll('#mapModalBody tr').forEach(tr=>{
+    const cName = tr.dataset.cname;
+    const value = tr.querySelector('.map-select').value;
+    if(value) chosen[cName] = value;
+  });
+
+  // Persist mappings (ignore/id, but not 'new' — that's transient).
+  state.clockifyMappings = state.clockifyMappings || {};
+  Object.entries(chosen).forEach(([cName, value])=>{
+    if(value !== 'new') state.clockifyMappings[cName] = value;
+  });
+
+  // Apply hours to the current month.
+  const key = `${state.year}-${state.month}`;
+  const applied = [];
+  const skippedManual = [];
+  const skippedIgnored = [];
+  const unmapped = [];
+
+  Object.entries(pendingClockifyData).forEach(([cName, hm])=>{
+    const target = chosen[cName];
+    if(!target){ unmapped.push(cName); return; }
+    if(target === 'ignore'){ skippedIgnored.push(cName); return; }
+
+    let member;
+    if(target === 'new'){
+      member = mkMember(cName, {});
+      state.members.push(member);
+      state.clockifyMappings[cName] = member.id; // now bind mapping to the new member's id
+    } else {
+      member = state.members.find(m=>m.id===target);
+      if(!member){ unmapped.push(cName); return; }
+    }
+
+    // Guard: don't overwrite a manually edited cell.
+    const existing = member.monthly[key];
+    if(existing && existing.manual){
+      skippedManual.push(member.name);
+      return;
+    }
+    member.monthly[key] = {
+      hours: hm.hours,
+      minutes: hm.minutes,
+      leave: existing ? existing.leave : [],
+      source: 'clockify', // marker so we know this came from sync
+    };
+    applied.push(member.name);
+  });
+
+  closeMappingModal();
+  render();
+  scheduleSave();
+
+  const parts = [];
+  parts.push(`✓ Synced hours for ${applied.length} team member(s): ${applied.join(', ')}.`);
+  if(skippedManual.length) parts.push(`\n⚠ Skipped (manually overridden): ${skippedManual.join(', ')}`);
+  if(skippedIgnored.length) parts.push(`\n⊘ Ignored: ${skippedIgnored.join(', ')}`);
+  if(unmapped.length) parts.push(`\n? Unmapped (choose someone next time): ${unmapped.join(', ')}`);
+  alert(parts.join(''));
+}
+
+document.getElementById('mapModalClose').addEventListener('click', closeMappingModal);
+document.getElementById('mapModalOverlay').addEventListener('click', e=>{
+  if(e.target.id === 'mapModalOverlay') closeMappingModal();
+});
+document.getElementById('mapModalSyncBtn').addEventListener('click', applyMappingAndSync);
 let db = null;
 let stateDocRef = null;
 let saveTimer = null;
@@ -957,10 +1135,13 @@ function renderTeamTable(workingDays){
       </td>
       <td class="num-cell net-target-cell">${c.netTarget.toFixed(1)}h</td>
       <td>
-        <div class="hm-input">
-          <input type="number" class="actual-hours" value="${md.hours}" min="0"><span>h</span>
-          <input type="number" class="actual-minutes" value="${md.minutes}" min="0" max="59"><span>m</span>
-        </div>
+        <span class="hours-cell-wrap">
+          <span class="hours-display" data-role="hours-display">
+            <span class="h-value">${md.hours || 0}h ${String(md.minutes || 0).padStart(2,'0')}m</span>
+            <span class="h-edit">✎</span>
+          </span>
+          ${md.manual ? `<span class="manual-badge releasable" data-role="manual-badge" title="Manually overridden — sync will skip this cell. Click to release back to sync control.">manual</span>` : (md.source === 'clockify' ? `<span class="source-badge" title="Last set by Clockify sync">sync</span>` : '')}
+        </span>
       </td>
       <td class="pct-cell" style="color:var(--${c.status==='green'?'green':c.status==='amber'?'amber':'red'})">${c.utilization.toFixed(1)}%</td>
       <td><span class="status-pill ${c.status}">${c.status==='green'?'🟢 Optimal':c.status==='amber'?'🟡 Moderate':'🔴 Action'}</span></td>
@@ -997,21 +1178,47 @@ function attachRowHandlers(workingDays){
       member.name = e.target.value; scheduleSave();
     });
 
-    // Hours/minutes/leave-hours: patch computed cells only, never rebuild the
-    // inputs — rebuilding on every keystroke was what broke typing and the
-    // up/down spinner arrows (it stole focus after each character).
-    row.querySelector('.actual-hours').addEventListener('input', e=>{
-      md.hours = e.target.value;
-      updateRowComputed(row, member, workingDays);
-      renderSummaryCards(workingDays);
-      scheduleSave();
+    // Hours cell: click to edit inline. Whatever the user types is marked
+    // manual so future Clockify syncs won't overwrite it.
+    const hoursWrap = row.querySelector('.hours-cell-wrap');
+    const hoursDisplay = hoursWrap.querySelector('[data-role="hours-display"]');
+    hoursDisplay.addEventListener('click', ()=>{
+      const currentH = md.hours || 0;
+      const currentM = md.minutes || 0;
+      hoursDisplay.outerHTML = `
+        <span class="hours-editor" data-role="hours-editor">
+          <input type="number" class="edit-hours" value="${currentH}" min="0" step="1"><span>h</span>
+          <input type="number" class="edit-minutes" value="${currentM}" min="0" max="59" step="1"><span>m</span>
+          <button data-role="save-hours">Save</button>
+        </span>`;
+      const editor = row.querySelector('[data-role="hours-editor"]');
+      const hIn = editor.querySelector('.edit-hours');
+      const mIn = editor.querySelector('.edit-minutes');
+      hIn.focus(); hIn.select();
+      const commit = ()=>{
+        md.hours = parseInt(hIn.value,10) || 0;
+        md.minutes = parseInt(mIn.value,10) || 0;
+        md.manual = true; // mark as user-overridden
+        renderTeamTable(workingDays);
+        renderSummaryCards(workingDays);
+        scheduleSave();
+      };
+      editor.querySelector('[data-role="save-hours"]').addEventListener('click', commit);
+      [hIn, mIn].forEach(inp=>{
+        inp.addEventListener('keydown', e=>{ if(e.key==='Enter') commit(); if(e.key==='Escape'){ renderTeamTable(workingDays); }});
+      });
     });
-    row.querySelector('.actual-minutes').addEventListener('input', e=>{
-      md.minutes = e.target.value;
-      updateRowComputed(row, member, workingDays);
-      renderSummaryCards(workingDays);
-      scheduleSave();
-    });
+
+    // Manual badge is clickable to "release" the cell back to sync control.
+    const manualBadge = hoursWrap.querySelector('[data-role="manual-badge"]');
+    if(manualBadge){
+      manualBadge.addEventListener('click', ()=>{
+        if(confirm(`Release ${member.name}'s ${monthNames[state.month]} hours back to Clockify sync? The next sync will overwrite them.`)){
+          delete md.manual;
+          renderTeamTable(workingDays); renderSummaryCards(workingDays); scheduleSave();
+        }
+      });
+    }
 
     row.querySelectorAll('.leave-type').forEach(sel=>{
       sel.addEventListener('change', e=>{
