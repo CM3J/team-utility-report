@@ -725,7 +725,7 @@ async function applyMappingAndSync(){
 
   // Collect the choices from the modal.
   const chosen = {};
-  document.querySelectorAll('#mapModalBody tr').forEach(tr=>{
+  document.querySelectorAll('#mapModalBody tbody tr').forEach(tr=>{
     const cName = tr.dataset.cname;
     const value = tr.querySelector('.map-select').value;
     if(value) chosen[cName] = value;
