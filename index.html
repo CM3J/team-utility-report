@@ -161,17 +161,60 @@
   .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-top:auto;}
   .cal-dow{font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-faint); text-align:center; padding-bottom:4px;}
   .cal-cell{
-    aspect-ratio:1; border-radius:6px; display:flex; align-items:center; justify-content:center;
-    font-family:'JetBrains Mono',monospace; font-size:11px; position:relative;
+    min-height:64px; border-radius:6px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    padding:6px 3px 4px; font-family:'JetBrains Mono',monospace; font-size:11px; position:relative;
     background:var(--surface-alt); color:var(--text-muted); border:1px solid var(--border-soft);
+    cursor:pointer; transition:transform .1s, border-color .15s;
+  }
+  .cal-cell:hover{border-color:var(--accent); transform:translateY(-1px);}
+  .cal-cell .cal-daynum{font-weight:600; line-height:1;}
+  .cal-cell .cal-label{
+    font-family:'Inter',sans-serif; font-size:8.5px; line-height:1.15; margin-top:3px; text-align:center;
+    overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; word-break:break-word;
   }
   .cal-cell.work{background:var(--green-soft); color:var(--text); border-color:rgba(62,207,142,0.25);}
-  .cal-cell.weekend{opacity:0.35;}
+  .cal-cell.weekend{opacity:0.4; cursor:default;}
+  .cal-cell.weekend:hover{transform:none; border-color:var(--border-soft);}
   .cal-cell.holiday{background:var(--red-soft); color:var(--red); border-color:rgba(232,93,93,0.3); font-weight:600;}
+  .cal-cell.holiday .cal-label{color:var(--red);}
   .cal-cell.closure{background:repeating-linear-gradient(45deg, var(--surface-alt), var(--surface-alt) 4px, var(--surface-raised) 4px, var(--surface-raised) 8px);}
-  .cal-cell.empty{background:transparent; border:none;}
+  .cal-cell.empty{background:transparent; border:none; cursor:default;}
+  .cal-cell .absence-dot{
+    position:absolute; top:5px; right:5px; width:6px; height:6px; border-radius:50%; background:var(--amber);
+  }
   .cal-legend{display:flex; gap:16px; margin-top:14px; flex-wrap:wrap; font-size:11px; color:var(--text-muted);}
   .cal-legend span{display:flex; align-items:center; gap:6px;}
+
+  /* ---------- Day detail modal ---------- */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none;
+    align-items:center; justify-content:center; z-index:100; padding:20px;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    width:100%; max-width:440px; max-height:85vh; overflow-y:auto; padding:22px;
+  }
+  .modal-card h3{font-size:16px; margin-bottom:2px;}
+  .modal-card .modal-sub{font-size:12px; color:var(--text-muted); margin-bottom:16px;}
+  .modal-close{position:absolute; top:16px; right:16px;}
+  .absence-list{list-style:none; padding:0; margin:0 0 16px; display:flex; flex-direction:column; gap:8px;}
+  .absence-list li{
+    display:flex; align-items:center; justify-content:space-between; background:var(--surface-alt);
+    border:1px solid var(--border); border-radius:8px; padding:8px 10px; font-size:12.5px;
+  }
+  .absence-list .who{font-weight:600;}
+  .absence-list .why{color:var(--text-muted); font-size:11.5px;}
+  .absence-list button{background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:13px;}
+  .absence-list button:hover{color:var(--red);}
+  .absence-empty{color:var(--text-faint); font-size:12.5px; margin-bottom:16px;}
+  .add-absence-form{display:flex; flex-direction:column; gap:10px; border-top:1px solid var(--border); padding-top:16px;}
+  .add-absence-form select, .add-absence-form input{
+    width:100%; background:var(--surface-alt); border:1px solid var(--border); border-radius:7px;
+    color:var(--text); padding:8px 10px; font-family:'Inter',sans-serif; font-size:13px; outline:none;
+  }
+  .add-absence-form .row{display:flex; gap:8px;}
+  .add-absence-form .row > *{flex:1;}
 
   /* ---------- Team table ---------- */
   .table-panel{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;}
@@ -314,8 +357,9 @@
         <span><span class="dot" style="background:var(--green)"></span>Working day</span>
         <span><span class="dot" style="background:var(--red)"></span>Public holiday</span>
         <span><span class="dot" style="background:var(--surface-raised); border:1px solid var(--border)"></span>Weekend</span>
-        <span><span class="dot" style="background:repeating-linear-gradient(45deg,#333,#333 2px,#444 2px,#444 4px)"></span>Closure</span>
+        <span><span class="dot" style="background:var(--amber)"></span>Has logged absence</span>
       </div>
+      <div style="font-size:11px; color:var(--text-faint); margin-top:8px;">Click any working day to log who was out.</div>
     </div>
   </div>
 </div>
@@ -324,6 +368,7 @@
   <div class="table-head-row">
     <h3>Team Utilization — <span id="tableMonthLabel"></span></h3>
     <div>
+      <button class="btn-ghost" id="syncClockifyBtn">Sync from Clockify</button>
       <button class="btn-ghost" id="refreshFirebaseBtn" style="display:none;">Refresh from Firebase</button>
       <button class="btn-ghost" id="exportBtn">Export JSON</button>
       <button class="btn-ghost" id="importBtn">Import JSON</button>
@@ -353,6 +398,28 @@
   </div>
   <div class="table-foot mono" style="color:var(--text-faint); font-size:11.5px;">
     <span id="formulaFoot">Formula: Net Target = (Working Days × 8h × (1 − Closure%)) − Leave Hours &nbsp;·&nbsp; Utilization = Actual ÷ Net Target × 100</span>
+  </div>
+</div>
+
+<div class="modal-overlay" id="dayModalOverlay">
+  <div class="modal-card" style="position:relative;">
+    <button class="modal-close btn-ghost" id="dayModalClose" style="padding:6px 10px;">✕</button>
+    <h3 id="dayModalTitle">Day</h3>
+    <div class="modal-sub" id="dayModalSub"></div>
+    <ul class="absence-list" id="absenceList"></ul>
+    <div class="absence-empty" id="absenceEmpty" style="display:none;">No absences logged for this day.</div>
+    <div class="add-absence-form">
+      <div class="row">
+        <select id="absenceMember"></select>
+        <select id="absenceType">
+          <!-- populated from LEAVE_TYPES -->
+        </select>
+      </div>
+      <div class="row">
+        <input type="number" id="absenceHours" placeholder="Hours" min="0" step="0.5" value="8">
+        <button class="btn-primary" id="addAbsenceBtn" style="flex:1;">+ Log absence</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -480,6 +547,71 @@ const firebaseConfig = {
 };
 
 const FIREBASE_ENABLED = firebaseConfig.apiKey !== "YOUR_API_KEY";
+
+/* =========================================================
+   CLOCKIFY SYNC
+   ---------------------------------------------------------
+   Paste your deployed Cloudflare Worker URL here (see clockify-worker.js
+   for the worker code + setup steps). Leave as-is to keep the button hidden.
+   ========================================================= */
+const CLOCKIFY_WORKER_URL = "https://YOUR-WORKER.workers.dev";
+const CLOCKIFY_ENABLED = CLOCKIFY_WORKER_URL !== "https://YOUR-WORKER.workers.dev";
+
+async function syncFromClockify(){
+  if(!CLOCKIFY_ENABLED){
+    alert("Clockify isn't connected yet. Deploy the Cloudflare Worker (see clockify-worker.js) and paste its URL into CLOCKIFY_WORKER_URL near the top of index.html's <script>.");
+    return;
+  }
+  const btn = document.getElementById('syncClockifyBtn');
+  const originalLabel = btn.textContent;
+  btn.textContent = 'Syncing…';
+  btn.disabled = true;
+
+  try{
+    const monthNum = state.month + 1; // Clockify sync endpoint takes 1-12
+    const res = await fetch(`${CLOCKIFY_WORKER_URL}/?year=${state.year}&month=${monthNum}`);
+    const data = await res.json();
+    if(!res.ok || data.error){
+      alert('Clockify sync failed: ' + (data.error || res.statusText));
+      return;
+    }
+
+    const clockifyNames = Object.keys(data);
+    const matched = [];
+    const unmatched = [];
+
+    clockifyNames.forEach(cName=>{
+      const member = state.members.find(m => m.name.trim().toLowerCase() === cName.trim().toLowerCase());
+      if(member){
+        const key = `${state.year}-${state.month}`;
+        const existing = member.monthly[key];
+        member.monthly[key] = {
+          hours: data[cName].hours,
+          minutes: data[cName].minutes,
+          leave: existing ? existing.leave : []
+        };
+        matched.push(cName);
+      } else {
+        unmatched.push(cName);
+      }
+    });
+
+    render();
+
+    let msg = `Synced ${matched.length} team member(s) for ${monthNames[state.month]} ${state.year}.`;
+    if(unmatched.length){
+      msg += `\n\nNo dashboard match for these Clockify names (rename to match, or add them as a team member first):\n- ${unmatched.join('\n- ')}`;
+    }
+    alert(msg);
+  }catch(err){
+    console.error(err);
+    alert('Clockify sync failed: ' + err.message);
+  }finally{
+    btn.textContent = originalLabel;
+    btn.disabled = false;
+  }
+}
+document.getElementById('syncClockifyBtn').addEventListener('click', syncFromClockify);
 let db = null;
 let stateDocRef = null;
 let saveTimer = null;
@@ -562,7 +694,6 @@ const SEED_2026 = {
   "Anna":   {"1":{hours:136,minutes:31},"2":{hours:170,minutes:32},"3":{hours:91,minutes:35},"4":{hours:130,minutes:11},"5":{hours:149,minutes:56}},
   "Conner": {"1":{hours:127,minutes:42},"2":{hours:84,minutes:39},"3":{hours:80,minutes:52},"4":{hours:83,minutes:3},"5":{hours:100,minutes:36}},
   "Don":    {"1":{hours:153,minutes:6},"2":{hours:122,minutes:46},"3":{hours:117,minutes:27},"4":{hours:140,minutes:29},"5":{hours:128,minutes:11}},
-  "George": {"1":{hours:106,minutes:46},"2":{hours:55,minutes:0},"3":{hours:22,minutes:0},"4":{hours:9,minutes:18}},
   "Nadya":  {"1":{hours:122,minutes:25},"2":{hours:111,minutes:30},"3":{hours:92,minutes:34},"4":{hours:91,minutes:31},"5":{hours:107,minutes:17}},
   "Ryan":   {"1":{hours:145,minutes:58},"2":{hours:140,minutes:14},"3":{hours:106,minutes:42},"4":{hours:128,minutes:17},"5":{hours:117,minutes:8}},
   "Kelly":  {"1":{hours:127,minutes:56},"2":{hours:110,minutes:51},"3":{hours:117,minutes:31},"4":{hours:118,minutes:55},"5":{hours:133,minutes:14}},
@@ -652,7 +783,9 @@ function renderCalendar(holidays, workingDays){
   const dowLabels = ['S','M','T','W','T','F','S'];
   const daysInMonth = new Date(Date.UTC(state.year, state.month+1, 0)).getUTCDate();
   const firstDow = new Date(Date.UTC(state.year, state.month, 1)).getUTCDay();
-  const holidaySet = new Set(holidays.filter(h=>h.date.getUTCFullYear()===state.year && h.date.getUTCMonth()===state.month).map(h=>h.iso));
+  const holidayMap = {};
+  holidays.filter(h=>h.date.getUTCFullYear()===state.year && h.date.getUTCMonth()===state.month)
+    .forEach(h=>{ holidayMap[h.iso] = h.name; });
   const closureActive = state.closureHours > 0;
 
   let html = dowLabels.map(l=>`<div class="cal-dow">${l}</div>`).join('');
@@ -662,14 +795,125 @@ function renderCalendar(holidays, workingDays){
     const date = new Date(Date.UTC(state.year, state.month, d));
     const dow = date.getUTCDay();
     const iso = toISO(date);
+    const isWeekend = dow===0||dow===6;
+    const holidayName = holidayMap[iso];
+    const absenceCount = countAbsencesOnDay(d);
+
     let cls = 'cal-cell';
-    if(dow===0||dow===6) cls += ' weekend';
-    else if(holidaySet.has(iso)) cls += ' holiday';
+    let label = '';
+    if(isWeekend) cls += ' weekend';
+    else if(holidayName){ cls += ' holiday'; label = holidayName.replace(' (observed)',' (obs)'); }
     else { cls += ' work'; if(closureActive) cls += ' closure'; }
-    html += `<div class="${cls}" title="${iso}">${d}</div>`;
+
+    html += `<div class="${cls}" data-day="${d}" title="${iso}${holidayName? ' — '+holidayName:''}">
+        <span class="cal-daynum">${d}</span>
+        ${label ? `<span class="cal-label">${label}</span>` : ''}
+        ${absenceCount>0 ? `<span class="absence-dot" title="${absenceCount} absence(s) logged"></span>` : ''}
+      </div>`;
   }
   grid.innerHTML = html;
+
+  grid.querySelectorAll('.cal-cell:not(.empty):not(.weekend)').forEach(cell=>{
+    cell.addEventListener('click', ()=> openDayModal(parseInt(cell.dataset.day,10)));
+  });
 }
+
+function countAbsencesOnDay(day){
+  const key = `${state.year}-${state.month}`;
+  let count = 0;
+  state.members.forEach(m=>{
+    const md = m.monthly[key];
+    if(md) count += md.leave.filter(l=>l.day===day).length;
+  });
+  return count;
+}
+
+/* ---------- Day detail modal ---------- */
+let activeModalDay = null;
+
+function openDayModal(day){
+  activeModalDay = day;
+  const date = new Date(Date.UTC(state.year, state.month, day));
+  const dow = date.toLocaleDateString('en-ZA', {weekday:'long', timeZone:'UTC'});
+  document.getElementById('dayModalTitle').textContent = `${dow}, ${day} ${monthNames[state.month]} ${state.year}`;
+  document.getElementById('dayModalSub').textContent = 'Log who was out this day, for how long, and why.';
+
+  const memberSel = document.getElementById('absenceMember');
+  memberSel.innerHTML = state.members.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+
+  const typeSel = document.getElementById('absenceType');
+  typeSel.innerHTML = LEAVE_TYPES.map(t=>`<option>${t}</option>`).join('');
+
+  renderAbsenceList();
+  document.getElementById('dayModalOverlay').classList.add('open');
+}
+
+function closeDayModal(){
+  document.getElementById('dayModalOverlay').classList.remove('open');
+  activeModalDay = null;
+}
+
+function renderAbsenceList(){
+  const key = `${state.year}-${state.month}`;
+  const rows = [];
+  state.members.forEach(m=>{
+    const md = m.monthly[key];
+    if(!md) return;
+    md.leave.forEach((l, idx)=>{
+      if(l.day === activeModalDay) rows.push({member:m, idx, leave:l});
+    });
+  });
+
+  const list = document.getElementById('absenceList');
+  const empty = document.getElementById('absenceEmpty');
+  if(rows.length===0){
+    list.innerHTML=''; empty.style.display='block';
+  } else {
+    empty.style.display='none';
+    list.innerHTML = rows.map(r=>`
+      <li data-member-id="${r.member.id}" data-idx="${r.idx}">
+        <div><span class="who">${r.member.name}</span> <span class="why">— ${r.leave.type}, ${r.leave.hours}h</span></div>
+        <button class="remove-absence-btn">✕</button>
+      </li>`).join('');
+    list.querySelectorAll('.remove-absence-btn').forEach(btn=>{
+      btn.addEventListener('click', e=>{
+        const li = e.target.closest('li');
+        const memberId = li.dataset.memberId;
+        const idx = +li.dataset.idx;
+        const member = state.members.find(m=>m.id===memberId);
+        const md = getMonthData(member, state.year, state.month);
+        md.leave.splice(idx,1);
+        renderAbsenceList();
+        renderTeamTable(getWorkingDaysInMonth(state.year, state.month, currentHolidays()));
+        renderSummaryCards(getWorkingDaysInMonth(state.year, state.month, currentHolidays()));
+        renderCalendar(currentHolidays(), getWorkingDaysInMonth(state.year, state.month, currentHolidays()));
+        scheduleSave();
+      });
+    });
+  }
+}
+
+document.getElementById('dayModalClose').addEventListener('click', closeDayModal);
+document.getElementById('dayModalOverlay').addEventListener('click', e=>{
+  if(e.target.id === 'dayModalOverlay') closeDayModal();
+});
+document.getElementById('addAbsenceBtn').addEventListener('click', ()=>{
+  const memberId = document.getElementById('absenceMember').value;
+  const type = document.getElementById('absenceType').value;
+  const hours = parseFloat(document.getElementById('absenceHours').value) || 0;
+  if(hours<=0){ alert('Enter hours greater than 0.'); return; }
+
+  const member = state.members.find(m=>m.id===memberId);
+  const md = getMonthData(member, state.year, state.month);
+  md.leave.push({type, hours, day: activeModalDay});
+
+  renderAbsenceList();
+  const wd = getWorkingDaysInMonth(state.year, state.month, currentHolidays());
+  renderTeamTable(wd);
+  renderSummaryCards(wd);
+  renderCalendar(currentHolidays(), wd);
+  scheduleSave();
+});
 
 function memberLeaveHours(md){
   return md.leave.reduce((sum,l)=> sum + (parseFloat(l.hours)||0), 0);
@@ -705,6 +949,7 @@ function renderTeamTable(workingDays){
                 ${LEAVE_TYPES.map(t=>`<option ${t===l.type?'selected':''}>${t}</option>`).join('')}
               </select>
               <input type="number" data-idx="${idx}" class="leave-hours" value="${l.hours}" min="0" step="0.5">h
+              ${l.day ? `<span style="color:var(--text-faint); font-size:10px;">·${l.day}${monthNames[state.month].slice(0,3)}</span>` : ''}
               <button data-idx="${idx}" class="leave-remove">×</button>
             </span>`).join('')}
           <button class="add-leave-btn">+ add</button>
