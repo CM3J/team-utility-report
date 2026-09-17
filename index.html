@@ -95,6 +95,66 @@
   .config-banner code{background:rgba(0,0,0,0.25); padding:1px 6px; border-radius:4px; font-family:'JetBrains Mono',monospace;}
   .config-banner strong{color:var(--text);}
 
+  /* ---------- Leave form view (?leave URL) ---------- */
+  body.leave-mode{padding:40px 20px;}
+  body.leave-mode .app-header,
+  body.leave-mode #syncPill,
+  body.leave-mode #configBanner,
+  body.leave-mode .cards,
+  body.leave-mode .layout-row,
+  body.leave-mode .tab-strip,
+  body.leave-mode #dashboardView{display:none !important;}
+  body.leave-mode #leaveFormView{display:block !important; max-width:520px; margin:0 auto;}
+  body.leave-mode .month-toggle{display:none;}
+
+  #leaveFormView .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:26px; margin-bottom:16px;
+  }
+  #leaveFormView .field{margin-bottom:18px;}
+  #leaveFormView .field label{display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px; font-weight:500;}
+  #leaveFormView .field label .req{color:var(--red); margin-left:2px;}
+  #leaveFormView input, #leaveFormView select, #leaveFormView textarea{
+    width:100%; background:var(--surface-alt); border:1px solid var(--border); border-radius:7px;
+    color:var(--text); padding:10px 12px; font-family:'Inter',sans-serif; font-size:14px; outline:none;
+    transition:border-color .15s;
+  }
+  #leaveFormView input:focus, #leaveFormView select:focus, #leaveFormView textarea:focus{border-color:var(--accent);}
+  #leaveFormView textarea{resize:vertical; min-height:80px;}
+  #leaveFormView .row{display:flex; gap:12px;}
+  #leaveFormView .row > *{flex:1;}
+  #leaveFormView .summary-box{
+    background:var(--accent-soft); border:1px solid rgba(76,141,255,0.3); border-radius:8px;
+    padding:14px 16px; margin-bottom:18px;
+  }
+  #leaveFormView .summary-box .label{font-size:11.5px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px;}
+  #leaveFormView .summary-box .value{font-family:'JetBrains Mono',monospace; font-size:22px; font-weight:600; color:var(--accent);}
+  #leaveFormView .summary-box .breakdown{font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--text-muted); margin-top:6px;}
+  #leaveFormView .summary-box.warn{background:rgba(232,169,59,0.1); border-color:rgba(232,169,59,0.3);}
+  #leaveFormView .summary-box.warn .value{color:var(--amber);}
+  #leaveFormView button.primary{
+    width:100%; background:var(--accent); color:#fff; border:none; border-radius:7px;
+    padding:12px; font-size:14px; font-weight:600; cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  #leaveFormView button.primary:hover{opacity:0.92;}
+  #leaveFormView button.primary:disabled{opacity:0.5; cursor:not-allowed;}
+  #leaveFormView .status{
+    text-align:center; padding:20px; border-radius:var(--radius); margin-bottom:16px;
+    display:none; font-size:14px;
+  }
+  #leaveFormView .status.show{display:block;}
+  #leaveFormView .status.success{background:var(--green-soft); border:1px solid rgba(62,207,142,0.3); color:var(--green);}
+  #leaveFormView .status.error{background:rgba(232,93,93,0.13); border:1px solid rgba(232,93,93,0.3); color:var(--red);}
+  #leaveFormView .status.loading{background:var(--surface); border:1px solid var(--border); color:var(--text-muted);}
+  #leaveFormView .footer-note{text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:20px;}
+  #leaveFormView .leave-header{margin-bottom:24px; text-align:center;}
+  #leaveFormView .leave-header .eyebrow{
+    font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.12em;
+    text-transform:uppercase; color:var(--accent); margin-bottom:6px;
+  }
+  #leaveFormView .leave-header h1{font-family:'Space Grotesk',sans-serif; font-size:26px; font-weight:600; margin:0 0 4px; letter-spacing:-0.01em;}
+  #leaveFormView .leave-header .sub{color:var(--text-muted); font-size:13px;}
+
   /* ---------- Cards row ---------- */
   .cards{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px;}
   .card{
@@ -267,6 +327,59 @@
 
   /* ---------- Team table ---------- */
   .table-panel{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;}
+
+  /* ---------- Tab strip ---------- */
+  .tab-strip{display:flex; gap:6px; margin-bottom:12px;}
+  .tab-btn{
+    background:var(--surface); color:var(--text-muted); border:1px solid var(--border);
+    border-radius:8px 8px 0 0; padding:10px 18px; cursor:pointer; font-size:13px; font-weight:500;
+    font-family:'Inter',sans-serif; transition:color .15s, background .15s;
+    display:inline-flex; align-items:center; gap:8px; border-bottom:none;
+  }
+  .tab-btn:hover{color:var(--text);}
+  .tab-btn.active{background:var(--surface); color:var(--text); border-color:var(--border); position:relative;}
+  .tab-btn.active::after{
+    content:''; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:var(--accent);
+  }
+  .tab-badge{
+    display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:18px;
+    padding:0 6px; border-radius:9px; background:var(--red); color:#fff;
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600;
+  }
+
+  /* ---------- Approval cards ---------- */
+  .approval-row{
+    display:grid; grid-template-columns:1fr auto; gap:16px; padding:16px 20px;
+    border-bottom:1px solid var(--border-soft); align-items:start;
+  }
+  .approval-row:last-child{border-bottom:none;}
+  .approval-meta .who{font-weight:600; font-size:14px; margin-bottom:4px;}
+  .approval-meta .who .reason-tag{
+    display:inline-block; margin-left:8px; padding:2px 8px; border-radius:5px;
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600;
+    background:var(--accent-soft); color:var(--accent); text-transform:uppercase; letter-spacing:0.04em;
+  }
+  .approval-meta .dates{font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-muted); margin-bottom:4px;}
+  .approval-meta .dates strong{color:var(--text);}
+  .approval-meta .breakdown{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-faint); margin-bottom:6px;}
+  .approval-meta .notes{
+    font-size:12.5px; color:var(--text); background:var(--surface-alt); border-left:2px solid var(--border);
+    padding:6px 10px; border-radius:4px; margin-top:6px; white-space:pre-wrap;
+  }
+  .approval-meta .status-line{font-size:11.5px; color:var(--text-faint); margin-top:6px; font-family:'JetBrains Mono',monospace;}
+  .approval-actions{display:flex; flex-direction:column; gap:6px; min-width:110px;}
+  .btn-approve{background:var(--green); color:#0E1113; border:none; border-radius:6px; padding:7px 14px; font-weight:600; font-size:12px; cursor:pointer; font-family:'Inter',sans-serif;}
+  .btn-decline{background:var(--red); color:#fff; border:none; border-radius:6px; padding:7px 14px; font-weight:600; font-size:12px; cursor:pointer; font-family:'Inter',sans-serif;}
+  .btn-approve:hover, .btn-decline:hover{opacity:0.9;}
+  .empty-state{padding:40px 20px; text-align:center; color:var(--text-faint); font-size:13px;}
+
+  .status-badge{
+    display:inline-block; margin-left:8px; padding:2px 8px; border-radius:5px;
+    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em;
+  }
+  .status-badge.pending{background:rgba(232,169,59,0.15); color:#E8A93B;}
+  .status-badge.approved{background:var(--green-soft); color:var(--green);}
+  .status-badge.declined{background:rgba(232,93,93,0.13); color:var(--red);}
   .table-head-row{display:flex; justify-content:space-between; align-items:center; padding:18px 20px; border-bottom:1px solid var(--border);}
   .table-head-row h3{font-size:15px;}
   .btn-primary{
@@ -354,6 +467,68 @@
   </div>
 </div>
 
+<!-- ================= LEAVE FORM VIEW (shown when URL has ?leave) ================= -->
+<div id="leaveFormView" style="display:none;">
+  <div class="leave-header">
+    <div class="eyebrow">Diginauts · Team Ops</div>
+    <h1>Leave Request</h1>
+    <div class="sub">Submit a leave request for admin approval.</div>
+  </div>
+
+  <div class="status loading show" id="leaveLoadingStatus">Loading team list…</div>
+  <div class="status success" id="leaveSuccessStatus"></div>
+  <div class="status error" id="leaveErrorStatus"></div>
+
+  <form class="card" id="leaveForm" style="display:none;">
+    <div class="field">
+      <label>Your name <span class="req">*</span></label>
+      <select id="leaveMemberSelect" required>
+        <option value="">— select your name —</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label>First day of leave <span class="req">*</span></label>
+        <input type="date" id="leaveStartDate" required>
+      </div>
+      <div class="field">
+        <label>Last day of leave <span class="req">*</span></label>
+        <input type="date" id="leaveEndDate" required>
+      </div>
+    </div>
+
+    <div class="summary-box" id="leaveSummaryBox" style="display:none;">
+      <div class="label">Total working days requested</div>
+      <div class="value"><span id="leaveTotalDays">0</span> day<span id="leaveDayPlural">s</span> · <span id="leaveTotalHours">0</span>h</div>
+      <div class="breakdown" id="leaveBreakdown"></div>
+    </div>
+
+    <div class="field">
+      <label>Reason <span class="req">*</span></label>
+      <select id="leaveReasonSelect" required>
+        <option value="">— select a reason —</option>
+        <option value="Annual Leave">Annual Leave</option>
+        <option value="Sick Leave">Sick Leave</option>
+        <option value="Family Leave">Family Leave</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Notes (optional)</label>
+      <textarea id="leaveNotes" placeholder="Anything the admin should know — coverage arrangements, doctor's note, etc."></textarea>
+    </div>
+
+    <button type="submit" class="primary" id="leaveSubmitBtn">Submit request</button>
+  </form>
+
+  <div class="footer-note">Your request will be reviewed by an admin. You'll hear back directly.</div>
+</div>
+<!-- ================= END LEAVE FORM VIEW ================= -->
+
+<div id="dashboardView">
+
 <div class="sync-pill" id="syncPill" style="margin-bottom:20px; width:fit-content;">
   <span class="sync-dot"></span><span id="syncLabel">Local only</span>
 </div>
@@ -413,7 +588,15 @@
   </div>
 </div>
 
-<div class="table-panel">
+<div class="tab-strip">
+  <button class="tab-btn active" data-tab="utilization">Team Utilization</button>
+  <button class="tab-btn" data-tab="approvals">
+    Leave Approvals
+    <span class="tab-badge" id="pendingBadge" style="display:none;">0</span>
+  </button>
+</div>
+
+<div class="table-panel" id="utilizationView">
   <div class="table-head-row">
     <h3>Team Utilization — <span id="tableMonthLabel"></span></h3>
     <div>
@@ -450,6 +633,19 @@
   </div>
 </div>
 
+<div class="table-panel" id="approvalsView" style="display:none;">
+  <div class="table-head-row">
+    <h3>Leave Approvals</h3>
+    <div>
+      <button class="btn-ghost" id="approvalsFilter" data-filter="pending">Showing: Pending</button>
+      <button class="btn-ghost" id="copyLeaveLinkBtn">Copy leave form link</button>
+    </div>
+  </div>
+  <div id="approvalsBody" style="padding:8px 0;"></div>
+</div>
+</div>
+<!-- end #dashboardView -->
+
 <div class="modal-overlay" id="mapModalOverlay">
   <div class="modal-card" style="position:relative; max-width:540px;">
     <button class="modal-close btn-ghost" id="mapModalClose" style="padding:6px 10px;">✕</button>
@@ -485,6 +681,16 @@
 </div>
 
 <script>
+/* =========================================================
+   MODE ROUTING — one file serves both the dashboard and the
+   shared leave form. `?leave` in the URL flips into form mode.
+   ========================================================= */
+const IS_LEAVE_MODE = new URLSearchParams(window.location.search).has('leave');
+if (IS_LEAVE_MODE) {
+  document.body.classList.add('leave-mode');
+  document.title = 'Diginauts — Leave Request';
+}
+
 /* =========================================================
    SOUTH AFRICAN PUBLIC HOLIDAY ENGINE
    ========================================================= */
@@ -831,6 +1037,7 @@ async function initFirebase(){
       await stateDocRef.set(JSON.parse(JSON.stringify(state)));
     }
     setSyncStatus('synced', 'Synced to Firebase');
+    subscribeToLeaveRequests(); // start listening for incoming leave requests
     return true;
   }catch(err){
     console.error('Firebase init failed:', err);
@@ -1452,9 +1659,388 @@ document.getElementById('exportCsvBtn').addEventListener('click', ()=>{
 });
 
 /* =========================================================
-   INIT
+   LEAVE APPROVALS
+   ---------------------------------------------------------
+   Requests live in a separate Firestore collection `leaveRequests`.
+   Each doc: { memberId, memberName, startDate, endDate, totalDays,
+              totalHours, workingDates:[iso], reason, notes, status:
+              'pending'|'approved'|'declined', submittedAt, decidedAt,
+              adminNote }
    ========================================================= */
+let leaveRequests = []; // cache
+let currentApprovalsFilter = 'pending';
+let leaveUnsub = null;
+
+function subscribeToLeaveRequests(){
+  if(!db || leaveUnsub) return;
+  leaveUnsub = db.collection('leaveRequests').orderBy('submittedAt', 'desc').onSnapshot(snap=>{
+    leaveRequests = snap.docs.map(d=> ({id: d.id, ...d.data()}));
+    updatePendingBadge();
+    if(document.getElementById('approvalsView').style.display !== 'none'){
+      renderApprovals();
+    }
+  }, err=> console.error('Leave requests subscription error:', err));
+}
+
+function updatePendingBadge(){
+  const pending = leaveRequests.filter(r => r.status === 'pending').length;
+  const badge = document.getElementById('pendingBadge');
+  if(pending > 0){
+    badge.textContent = pending;
+    badge.style.display = 'inline-flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function renderApprovals(){
+  const body = document.getElementById('approvalsBody');
+  const filtered = leaveRequests.filter(r => r.status === currentApprovalsFilter);
+
+  if(filtered.length === 0){
+    const label = currentApprovalsFilter === 'pending' ? 'pending' : currentApprovalsFilter;
+    body.innerHTML = `<div class="empty-state">No ${label} leave requests.</div>`;
+    return;
+  }
+
+  body.innerHTML = filtered.map(r => {
+    const submitted = r.submittedAt && r.submittedAt.toDate ? r.submittedAt.toDate().toLocaleString('en-ZA', {dateStyle:'medium', timeStyle:'short'}) : '—';
+    const decided = r.decidedAt && r.decidedAt.toDate ? r.decidedAt.toDate().toLocaleString('en-ZA', {dateStyle:'medium', timeStyle:'short'}) : null;
+    // Breakdown per month
+    const byMonth = {};
+    (r.workingDates || []).forEach(iso=>{
+      const key = iso.slice(0,7);
+      byMonth[key] = (byMonth[key] || 0) + 1;
+    });
+    const mNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const breakdownParts = Object.entries(byMonth).map(([k, days])=>{
+      const [y, m] = k.split('-');
+      return `${mNames[parseInt(m,10)-1]} ${y}: ${days}d`;
+    });
+    const breakdown = breakdownParts.length > 1 ? breakdownParts.join(' · ') : '';
+
+    const actions = r.status === 'pending' ? `
+      <button class="btn-approve" data-id="${r.id}" data-action="approve">✓ Approve</button>
+      <button class="btn-decline" data-id="${r.id}" data-action="decline">✕ Decline</button>
+    ` : `
+      <div style="text-align:right; font-size:11px; color:var(--text-faint); font-family:'JetBrains Mono',monospace;">
+        ${r.status === 'approved' ? '✓ Approved' : '✕ Declined'}<br>${decided || ''}
+      </div>
+      ${r.status === 'approved' ? `<button class="btn-ghost" data-id="${r.id}" data-action="revert" style="font-size:11px; padding:4px 8px;">Revert to pending</button>` : ''}
+    `;
+
+    return `
+      <div class="approval-row">
+        <div class="approval-meta">
+          <div class="who">
+            ${r.memberName}
+            <span class="reason-tag">${r.reason}</span>
+            <span class="status-badge ${r.status}">${r.status}</span>
+          </div>
+          <div class="dates"><strong>${r.startDate}</strong> → <strong>${r.endDate}</strong> · ${r.totalDays} day${r.totalDays===1?'':'s'} · ${r.totalHours}h</div>
+          ${breakdown ? `<div class="breakdown">Split: ${breakdown}</div>` : ''}
+          ${r.notes ? `<div class="notes">${r.notes.replace(/</g,'&lt;')}</div>` : ''}
+          ${r.adminNote ? `<div class="notes" style="border-left-color:var(--accent);"><strong>Admin note:</strong> ${r.adminNote.replace(/</g,'&lt;')}</div>` : ''}
+          <div class="status-line">Submitted: ${submitted}</div>
+        </div>
+        <div class="approval-actions">${actions}</div>
+      </div>`;
+  }).join('');
+
+  // Wire up buttons
+  body.querySelectorAll('button[data-action]').forEach(btn=>{
+    btn.addEventListener('click', ()=> handleApprovalAction(btn.dataset.id, btn.dataset.action));
+  });
+}
+
+async function handleApprovalAction(requestId, action){
+  const request = leaveRequests.find(r => r.id === requestId);
+  if(!request) return;
+
+  if(action === 'approve'){
+    // Look the member up in state, either by id or by name (in case they
+    // were removed/renamed since the request was submitted).
+    let member = state.members.find(m => m.id === request.memberId);
+    if(!member) member = state.members.find(m => m.name.trim().toLowerCase() === request.memberName.trim().toLowerCase());
+
+    if(!member){
+      if(!confirm(`No dashboard member matches "${request.memberName}" — they may have been removed. Approve anyway? (Leave won't be applied to the calendar.)`)) return;
+    } else {
+      // Apply each working day to the member's calendar in the correct month.
+      // Split by actual date: each day lands in the month it belongs to.
+      (request.workingDates || []).forEach(iso=>{
+        const [y, m, d] = iso.split('-').map(n => parseInt(n,10));
+        const year = y, monthIdx = m - 1, day = d;
+        const key = `${year}-${monthIdx}`;
+        if(!member.monthly[key]) member.monthly[key] = {hours:0, minutes:0, leave:[]};
+        // Skip if a leave entry already exists for this exact day+reason (avoid double-log)
+        const already = member.monthly[key].leave.some(l => l.day === day && l.type === request.reason && l.fromRequestId === request.id);
+        if(!already){
+          member.monthly[key].leave.push({
+            type: request.reason,
+            hours: 8,
+            day,
+            fromRequestId: request.id,
+          });
+        }
+      });
+    }
+
+    await db.collection('leaveRequests').doc(requestId).update({
+      status: 'approved',
+      decidedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    scheduleSave(); // persist the leave entries onto the dashboard state
+    render();
+    alert(`Approved ${request.memberName}'s ${request.reason} (${request.totalDays} days).${member ? ' Leave entries added to their calendar.' : ''}`);
+  } else if(action === 'decline'){
+    const note = prompt(`Decline ${request.memberName}'s leave request? Optionally add a note back to them:`);
+    if(note === null) return; // cancelled
+    await db.collection('leaveRequests').doc(requestId).update({
+      status: 'declined',
+      decidedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      adminNote: note.trim(),
+    });
+  } else if(action === 'revert'){
+    if(!confirm(`Revert ${request.memberName}'s request back to pending? This will also remove the leave entries from their calendar.`)) return;
+    // Remove any leave entries that were added by this request
+    const member = state.members.find(m => m.id === request.memberId) ||
+                   state.members.find(m => m.name.trim().toLowerCase() === request.memberName.trim().toLowerCase());
+    if(member){
+      Object.keys(member.monthly).forEach(key=>{
+        member.monthly[key].leave = (member.monthly[key].leave || []).filter(l => l.fromRequestId !== request.id);
+      });
+    }
+    await db.collection('leaveRequests').doc(requestId).update({
+      status: 'pending',
+      decidedAt: firebase.firestore.FieldValue.delete(),
+      adminNote: firebase.firestore.FieldValue.delete(),
+    });
+    scheduleSave();
+    render();
+  }
+}
+
+/* Tab switching */
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    const tab = btn.dataset.tab;
+    document.getElementById('utilizationView').style.display = tab === 'utilization' ? '' : 'none';
+    document.getElementById('approvalsView').style.display = tab === 'approvals' ? '' : 'none';
+    if(tab === 'approvals') renderApprovals();
+  });
+});
+
+/* Filter toggle: pending → approved → declined → back */
+document.getElementById('approvalsFilter').addEventListener('click', (e)=>{
+  const order = ['pending','approved','declined'];
+  const next = order[(order.indexOf(currentApprovalsFilter) + 1) % order.length];
+  currentApprovalsFilter = next;
+  e.target.textContent = 'Showing: ' + next.charAt(0).toUpperCase() + next.slice(1);
+  renderApprovals();
+});
+
+/* Copy leave form link */
+document.getElementById('copyLeaveLinkBtn').addEventListener('click', ()=>{
+  // Build the leave-form URL: strip any existing query and add ?leave.
+  const base = window.location.href.split('?')[0].split('#')[0];
+  const url = base + '?leave';
+  navigator.clipboard.writeText(url).then(()=>{
+    const btn = document.getElementById('copyLeaveLinkBtn');
+    const original = btn.textContent;
+    btn.textContent = '✓ Copied';
+    setTimeout(()=> btn.textContent = original, 1500);
+  }).catch(()=> alert('Leave form URL: ' + url));
+});
+
+
+/* =========================================================
+   LEAVE FORM (when ?leave URL) — reuses the same Firebase
+   config and holiday engine as the dashboard.
+   ========================================================= */
+function getSAHolidaySet(startYear, endYear){
+  const set = new Set();
+  for(let y=startYear; y<=endYear; y++){
+    const holidays = getSAHolidays(y, []);
+    holidays.forEach(h => set.add(h.iso));
+  }
+  return set;
+}
+function workingDaysBetween(startDate, endDate){
+  if(endDate < startDate) return {days:0, dates:[]};
+  const set = getSAHolidaySet(startDate.getUTCFullYear(), endDate.getUTCFullYear());
+  const dates = [];
+  let cursor = new Date(startDate);
+  while(cursor <= endDate){
+    const dow = cursor.getUTCDay();
+    const iso = toISO(cursor);
+    if(dow!==0 && dow!==6 && !set.has(iso)) dates.push(iso);
+    cursor = addDays(cursor, 1);
+  }
+  return {days: dates.length, dates};
+}
+
+async function startLeaveForm(){
+  const els = {
+    loading: document.getElementById('leaveLoadingStatus'),
+    success: document.getElementById('leaveSuccessStatus'),
+    error:   document.getElementById('leaveErrorStatus'),
+    form:    document.getElementById('leaveForm'),
+    member:  document.getElementById('leaveMemberSelect'),
+    start:   document.getElementById('leaveStartDate'),
+    end:     document.getElementById('leaveEndDate'),
+    reason:  document.getElementById('leaveReasonSelect'),
+    notes:   document.getElementById('leaveNotes'),
+    submit:  document.getElementById('leaveSubmitBtn'),
+    summary: document.getElementById('leaveSummaryBox'),
+    totalDays: document.getElementById('leaveTotalDays'),
+    dayPlural: document.getElementById('leaveDayPlural'),
+    totalHours: document.getElementById('leaveTotalHours'),
+    breakdown:  document.getElementById('leaveBreakdown'),
+  };
+
+  const showStatus = (kind, msg) => {
+    ['loading','success','error'].forEach(k=>{
+      els[k].classList.remove('show');
+      if(k===kind){ els[k].textContent = msg; els[k].classList.add('show'); }
+    });
+  };
+
+  let leaveDb;
+  let leaveMembers = [];
+
+  try{
+    if(!FIREBASE_ENABLED){
+      showStatus('error', 'Leave form needs Firebase to work. Check with the admin.');
+      return;
+    }
+    firebase.initializeApp(firebaseConfig);
+    await firebase.auth().signInAnonymously();
+    leaveDb = firebase.firestore();
+
+    const stateDoc = await leaveDb.collection('utilizationDashboard').doc('state').get();
+    if(!stateDoc.exists){
+      showStatus('error', 'No team list found. Ask an admin to open the dashboard first.');
+      return;
+    }
+    const remoteState = stateDoc.data();
+    leaveMembers = (remoteState.members || [])
+      .map(m => ({id: m.id, name: m.name}))
+      .filter(m => m.name && m.name.trim().length > 0)
+      .sort((a,b)=> a.name.localeCompare(b.name));
+
+    if(leaveMembers.length === 0){
+      showStatus('error', 'No team members configured yet. Ask an admin to set the team up first.');
+      return;
+    }
+
+    els.member.innerHTML = '<option value="">— select your name —</option>' +
+      leaveMembers.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+
+    els.loading.classList.remove('show');
+    els.form.style.display = 'block';
+  }catch(err){
+    console.error(err);
+    showStatus('error', 'Could not load the form: ' + err.message);
+    return;
+  }
+
+  const updateSummary = () => {
+    const s = els.start.value, e = els.end.value;
+    if(!s || !e){ els.summary.style.display = 'none'; return; }
+    const startDate = new Date(s + 'T00:00:00Z');
+    const endDate = new Date(e + 'T00:00:00Z');
+    if(endDate < startDate){
+      els.summary.style.display = 'block';
+      els.summary.classList.add('warn');
+      els.totalDays.textContent = '0';
+      els.totalHours.textContent = '0';
+      els.breakdown.textContent = 'End date is before start date.';
+      return;
+    }
+    els.summary.classList.remove('warn');
+    const result = workingDaysBetween(startDate, endDate);
+    els.summary.style.display = 'block';
+    els.totalDays.textContent = result.days;
+    els.dayPlural.textContent = result.days === 1 ? '' : 's';
+    els.totalHours.textContent = result.days * 8;
+
+    if(result.days === 0){
+      els.breakdown.textContent = 'No working days in that range (weekends & public holidays excluded).';
+    } else {
+      const byMonth = {};
+      result.dates.forEach(iso=>{
+        const key = iso.slice(0,7);
+        byMonth[key] = (byMonth[key] || 0) + 1;
+      });
+      const mNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const parts = Object.entries(byMonth).map(([k, days])=>{
+        const [y, m] = k.split('-');
+        return `${mNames[parseInt(m,10)-1]} ${y}: ${days}d`;
+      });
+      els.breakdown.textContent = parts.length > 1 ? 'Split: ' + parts.join(' · ') : 'Weekends & SA public holidays excluded.';
+    }
+  };
+  els.start.addEventListener('change', updateSummary);
+  els.end.addEventListener('change', updateSummary);
+
+  els.form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    els.submit.disabled = true;
+    els.submit.textContent = 'Submitting…';
+
+    try{
+      const memberId = els.member.value;
+      const member = leaveMembers.find(m => m.id === memberId);
+      if(!member) throw new Error('Please select your name.');
+
+      const s = els.start.value, en = els.end.value;
+      if(!s || !en) throw new Error('Please pick both start and end dates.');
+
+      const startDate = new Date(s + 'T00:00:00Z');
+      const endDate = new Date(en + 'T00:00:00Z');
+      if(endDate < startDate) throw new Error('End date must be on or after start date.');
+
+      const result = workingDaysBetween(startDate, endDate);
+      if(result.days === 0) throw new Error('That range has no working days (only weekends/public holidays).');
+
+      const reason = els.reason.value;
+      if(!reason) throw new Error('Please pick a reason.');
+
+      const request = {
+        memberId,
+        memberName: member.name,
+        startDate: s,
+        endDate: en,
+        totalDays: result.days,
+        totalHours: result.days * 8,
+        workingDates: result.dates,
+        reason,
+        notes: els.notes.value.trim(),
+        status: 'pending',
+        submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      };
+
+      await leaveDb.collection('leaveRequests').add(request);
+
+      els.form.style.display = 'none';
+      showStatus('success', `✓ Request submitted. ${result.days} day${result.days===1?'':'s'} of ${reason} from ${s} to ${en}. Admin has been notified.`);
+    }catch(err){
+      console.error(err);
+      showStatus('error', 'Could not submit: ' + err.message);
+      els.submit.disabled = false;
+      els.submit.textContent = 'Submit request';
+    }
+  });
+}
+
 (async function start(){
+  if (IS_LEAVE_MODE) {
+    // Standalone form mode — skip dashboard init entirely, just start the form.
+    await startLeaveForm();
+    return;
+  }
   populateSelectors();
   render();
   await initFirebase();
