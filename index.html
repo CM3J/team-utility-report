@@ -485,6 +485,7 @@
       <select id="leaveMemberSelect" required>
         <option value="">— select your name —</option>
       </select>
+      <div id="leaveBalanceInfo" style="display:none; margin-top:10px; padding:10px 12px; background:var(--surface-alt); border-radius:7px; font-size:12px; color:var(--text-muted);"></div>
     </div>
 
     <div class="row">
@@ -645,6 +646,14 @@
 </div>
 </div>
 <!-- end #dashboardView -->
+
+<div class="modal-overlay" id="historyModalOverlay">
+  <div class="modal-card" style="position:relative; max-width:520px;">
+    <button class="modal-close btn-ghost" onclick="document.getElementById('historyModalOverlay').classList.remove('open')" style="padding:6px 10px;">✕</button>
+    <h3 id="historyModalTitle">History</h3>
+    <div id="historyModalBody" style="margin-top:14px;"></div>
+  </div>
+</div>
 
 <div class="modal-overlay" id="mapModalOverlay">
   <div class="modal-card" style="position:relative; max-width:540px;">
@@ -996,6 +1005,9 @@ async function applyMappingAndSync(){
   }
 }
 
+document.getElementById('historyModalOverlay').addEventListener('click', e=>{
+  if(e.target.id === 'historyModalOverlay') e.target.classList.remove('open');
+});
 document.getElementById('mapModalClose').addEventListener('click', closeMappingModal);
 document.getElementById('mapModalOverlay').addEventListener('click', e=>{
   if(e.target.id === 'mapModalOverlay') closeMappingModal();
@@ -1659,6 +1671,79 @@ document.getElementById('exportCsvBtn').addEventListener('click', ()=>{
 });
 
 /* =========================================================
+   LEAVE BALANCE CALCULATIONS
+   ---------------------------------------------------------
+   Per member:
+     openingBalance      — days (number)
+     openingBalanceDate  — 'YYYY-MM-DD', the anchor
+     adjustments         — array of {days, reason, effectiveDate, at, id}
+                           days can be +ve (grant) or -ve (deduct)
+   Accrual: +1.25 days on the 1st of every month starting the month
+            AFTER openingBalanceDate. No cap.
+   Deductions: sum of days from APPROVED leave requests where
+               reason === 'Annual Leave'. Sick / Family / Other
+               do not touch the balance.
+   ========================================================= */
+const MONTHLY_ACCRUAL = 1.25;
+
+function monthsBetween(fromDate, toDate){
+  // Count of first-of-month accrual events strictly AFTER fromDate and on or before toDate.
+  if(toDate <= fromDate) return 0;
+  let count = 0;
+  // Start walking from the first of the month after fromDate.
+  let year = fromDate.getUTCFullYear();
+  let month = fromDate.getUTCMonth() + 1;
+  if(month > 11){ month = 0; year++; }
+  let cursor = new Date(Date.UTC(year, month, 1));
+  while(cursor <= toDate){
+    count++;
+    month++;
+    if(month > 11){ month = 0; year++; }
+    cursor = new Date(Date.UTC(year, month, 1));
+  }
+  return count;
+}
+
+function annualLeaveDaysUsed(memberId, asOfDate){
+  // Sum totalDays of every APPROVED Annual Leave request for this member.
+  // We count approved leave the moment it's approved (rather than waiting for
+  // the leave start date to pass) — this matches how people think about their
+  // balance: "what's committed vs what I have left." asOfDate is used for
+  // matching against the member's identity but not for filtering by date.
+  const member = state.members.find(m => m.id === memberId);
+  const memberName = member ? member.name.trim().toLowerCase() : null;
+  return leaveRequests
+    .filter(r => r.status === 'approved'
+             && r.reason === 'Annual Leave'
+             && (r.memberId === memberId || (memberName && (r.memberName || '').trim().toLowerCase() === memberName)))
+    .reduce((sum, r) => sum + (r.totalDays || 0), 0);
+}
+
+function adjustmentsSum(member, asOfDate){
+  const iso = toISO(asOfDate);
+  return (member.adjustments || [])
+    .filter(a => !a.effectiveDate || a.effectiveDate <= iso)
+    .reduce((sum, a) => sum + (parseFloat(a.days) || 0), 0);
+}
+
+function leaveBalanceAt(member, asOfDate){
+  // Returns the annual-leave balance for this member as of asOfDate (a Date).
+  const opening = parseFloat(member.openingBalance) || 0;
+  const anchor = member.openingBalanceDate
+    ? new Date(member.openingBalanceDate + 'T00:00:00Z')
+    : asOfDate; // no anchor = no accrual
+  const accrued = monthsBetween(anchor, asOfDate) * MONTHLY_ACCRUAL;
+  const used = annualLeaveDaysUsed(member.id, asOfDate);
+  const adjustments = adjustmentsSum(member, asOfDate);
+  return opening + accrued - used + adjustments;
+}
+
+function currentLeaveBalance(member){
+  return leaveBalanceAt(member, new Date());
+}
+
+
+/* =========================================================
    LEAVE APPROVALS
    ---------------------------------------------------------
    Requests live in a separate Firestore collection `leaveRequests`.
@@ -1695,18 +1780,98 @@ function updatePendingBadge(){
 
 function renderApprovals(){
   const body = document.getElementById('approvalsBody');
+  body.innerHTML = `
+    <div id="balancesPanel"></div>
+    <div id="requestsPanel"></div>
+  `;
+  renderBalancesPanel();
+  renderRequestsPanel();
+}
+
+function renderBalancesPanel(){
+  const panel = document.getElementById('balancesPanel');
+  if(!panel) return;
+
+  const today = new Date();
+  const rows = state.members.map(m => {
+    const bal = currentLeaveBalance(m);
+    const opening = (parseFloat(m.openingBalance) || 0);
+    const openingDate = m.openingBalanceDate || '(not set)';
+    const anchor = m.openingBalanceDate ? new Date(m.openingBalanceDate + 'T00:00:00Z') : today;
+    const accrued = monthsBetween(anchor, today) * MONTHLY_ACCRUAL;
+    const used = annualLeaveDaysUsed(m.id, today);
+    const adj = adjustmentsSum(m, today);
+    const balColour = bal < 0 ? 'var(--red)' : (bal < 5 ? 'var(--amber)' : 'var(--green)');
+    return `
+      <tr data-mid="${m.id}">
+        <td><strong>${m.name}</strong></td>
+        <td class="num-cell" style="color:${balColour}; font-weight:600;">${bal.toFixed(2)} days</td>
+        <td class="num-cell" title="Opening balance">
+          <span class="opening-editable" style="cursor:pointer; border-bottom:1px dashed var(--text-faint);">${opening} d</span>
+          <div style="font-size:10px; color:var(--text-faint); font-family:'JetBrains Mono',monospace;">from ${openingDate}</div>
+        </td>
+        <td class="num-cell" style="color:var(--text-muted);" title="Accrued from ${openingDate} to today at 1.25 days/month">+${accrued.toFixed(2)}</td>
+        <td class="num-cell" style="color:var(--red);" title="Approved Annual Leave days">−${used.toFixed(2)}</td>
+        <td class="num-cell" style="color:${adj >= 0 ? 'var(--green)' : 'var(--red)'};" title="Sum of admin adjustments">${adj >= 0 ? '+' : ''}${adj.toFixed(2)}</td>
+        <td>
+          <button class="btn-ghost adjust-balance-btn" style="font-size:11px; padding:5px 10px;">Adjust</button>
+          <button class="btn-ghost history-btn" style="font-size:11px; padding:5px 10px;">History</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  panel.innerHTML = `
+    <div style="padding:14px 20px; border-bottom:1px solid var(--border);">
+      <h3 style="font-size:13px; font-weight:600; margin:0 0 4px;">Annual Leave Balances</h3>
+      <div style="font-size:11px; color:var(--text-muted);">Balance = opening + accrued (+${MONTHLY_ACCRUAL}/month) − approved Annual Leave + adjustments. Sick / Family / Other don't touch the balance.</div>
+    </div>
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th>Member</th>
+          <th style="text-align:left;">Current balance</th>
+          <th style="text-align:left;">Opening</th>
+          <th style="text-align:left;">Accrued</th>
+          <th style="text-align:left;">Used</th>
+          <th style="text-align:left;">Adjustments</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows || '<tr><td colspan="7" class="empty-state">No team members yet.</td></tr>'}</tbody>
+    </table>
+  `;
+
+  panel.querySelectorAll('tr[data-mid]').forEach(tr => {
+    const mid = tr.dataset.mid;
+    tr.querySelector('.adjust-balance-btn').addEventListener('click', () => openAdjustmentModal(mid));
+    tr.querySelector('.history-btn').addEventListener('click', () => openHistoryModal(mid));
+    tr.querySelector('.opening-editable').addEventListener('click', () => openOpeningBalanceModal(mid));
+  });
+}
+
+function renderRequestsPanel(){
+  const panel = document.getElementById('requestsPanel');
+  if(!panel) return;
+
   const filtered = leaveRequests.filter(r => r.status === currentApprovalsFilter);
+
+  const header = `
+    <div style="padding:14px 20px; border-top:1px solid var(--border); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+      <h3 style="font-size:13px; font-weight:600; margin:0;">${currentApprovalsFilter === 'pending' ? 'Pending requests' : currentApprovalsFilter === 'approved' ? 'Approved requests (history)' : 'Declined requests (history)'}</h3>
+      <div style="font-size:11px; color:var(--text-faint);">Showing ${filtered.length}</div>
+    </div>
+  `;
 
   if(filtered.length === 0){
     const label = currentApprovalsFilter === 'pending' ? 'pending' : currentApprovalsFilter;
-    body.innerHTML = `<div class="empty-state">No ${label} leave requests.</div>`;
+    panel.innerHTML = header + `<div class="empty-state">No ${label} leave requests.</div>`;
     return;
   }
 
-  body.innerHTML = filtered.map(r => {
+  const rowsHtml = filtered.map(r => {
     const submitted = r.submittedAt && r.submittedAt.toDate ? r.submittedAt.toDate().toLocaleString('en-ZA', {dateStyle:'medium', timeStyle:'short'}) : '—';
     const decided = r.decidedAt && r.decidedAt.toDate ? r.decidedAt.toDate().toLocaleString('en-ZA', {dateStyle:'medium', timeStyle:'short'}) : null;
-    // Breakdown per month
     const byMonth = {};
     (r.workingDates || []).forEach(iso=>{
       const key = iso.slice(0,7);
@@ -1747,9 +1912,114 @@ function renderApprovals(){
       </div>`;
   }).join('');
 
-  // Wire up buttons
-  body.querySelectorAll('button[data-action]').forEach(btn=>{
+  panel.innerHTML = header + rowsHtml;
+
+  panel.querySelectorAll('button[data-action]').forEach(btn=>{
     btn.addEventListener('click', ()=> handleApprovalAction(btn.dataset.id, btn.dataset.action));
+  });
+}
+
+/* ---------- Balance-related modals ---------- */
+
+function openOpeningBalanceModal(memberId){
+  const member = state.members.find(m => m.id === memberId);
+  if(!member) return;
+  const days = prompt(`Opening leave balance (days) for ${member.name}:`, member.openingBalance ?? '0');
+  if(days === null) return;
+  const parsedDays = parseFloat(days);
+  if(isNaN(parsedDays)){ alert('Enter a valid number.'); return; }
+  const anchor = prompt(`Effective date for that opening balance (YYYY-MM-DD).\nAccrual of +${MONTHLY_ACCRUAL} days/month starts from the month AFTER this date.`, member.openingBalanceDate || new Date().toISOString().slice(0,10));
+  if(anchor === null) return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(anchor.trim())){ alert('Date must be YYYY-MM-DD.'); return; }
+  member.openingBalance = parsedDays;
+  member.openingBalanceDate = anchor.trim();
+  scheduleSave();
+  renderApprovals();
+}
+
+function openAdjustmentModal(memberId){
+  const member = state.members.find(m => m.id === memberId);
+  if(!member) return;
+  const daysStr = prompt(`Adjust ${member.name}'s balance by how many days?\n(positive to add, negative to deduct — e.g. 5 or -3)`);
+  if(daysStr === null) return;
+  const days = parseFloat(daysStr);
+  if(isNaN(days) || days === 0){ alert('Enter a non-zero number.'); return; }
+  const reason = prompt('Reason for this adjustment (shown in history):', '');
+  if(reason === null) return;
+  const effectiveDate = prompt('Effective date (YYYY-MM-DD). Leave blank for today.', new Date().toISOString().slice(0,10));
+  if(effectiveDate === null) return;
+  const eff = effectiveDate.trim();
+  if(eff && !/^\d{4}-\d{2}-\d{2}$/.test(eff)){ alert('Date must be YYYY-MM-DD or blank.'); return; }
+
+  member.adjustments = member.adjustments || [];
+  member.adjustments.push({
+    id: crypto.randomUUID(),
+    days,
+    reason: reason.trim(),
+    effectiveDate: eff || new Date().toISOString().slice(0,10),
+    at: new Date().toISOString(),
+  });
+  scheduleSave();
+  renderApprovals();
+}
+
+function openHistoryModal(memberId){
+  const member = state.members.find(m => m.id === memberId);
+  if(!member) return;
+
+  const requests = leaveRequests
+    .filter(r => r.memberId === memberId || (r.memberName || '').trim().toLowerCase() === member.name.trim().toLowerCase())
+    .sort((a,b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+
+  const adjustments = (member.adjustments || [])
+    .slice()
+    .sort((a,b) => (b.at || '').localeCompare(a.at || ''));
+
+  const reqHtml = requests.length ? requests.map(r => {
+    const decided = r.decidedAt && r.decidedAt.toDate ? r.decidedAt.toDate().toLocaleDateString('en-ZA', {dateStyle:'medium'}) : '';
+    const submitted = r.submittedAt && r.submittedAt.toDate ? r.submittedAt.toDate().toLocaleDateString('en-ZA', {dateStyle:'medium'}) : '';
+    return `<li>
+      <span class="status-badge ${r.status}">${r.status}</span>
+      <strong>${r.reason}</strong> · ${r.totalDays}d · ${r.startDate} → ${r.endDate}
+      <div style="font-size:11px; color:var(--text-faint); margin-top:2px;">Submitted ${submitted}${decided ? ' · Decided ' + decided : ''}</div>
+    </li>`;
+  }).join('') : '<li style="color:var(--text-faint);">No leave requests yet.</li>';
+
+  const adjHtml = adjustments.length ? adjustments.map(a => `
+    <li data-adj-id="${a.id || ''}">
+      <span style="font-family:'JetBrains Mono',monospace; color:${a.days >= 0 ? 'var(--green)' : 'var(--red)'}; font-weight:600;">${a.days >= 0 ? '+' : ''}${a.days}d</span>
+      · ${(a.reason || '(no reason)').replace(/</g,'&lt;')}
+      <div style="font-size:11px; color:var(--text-faint); margin-top:2px;">Effective ${a.effectiveDate || '—'} · Made ${a.at ? a.at.slice(0,10) : '—'}
+        ${a.id ? `<button class="remove-adj-btn" style="background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:11px; margin-left:6px;">✕ remove</button>` : ''}
+      </div>
+    </li>`).join('') : '<li style="color:var(--text-faint);">No adjustments yet.</li>';
+
+  const modal = document.getElementById('historyModalOverlay');
+  document.getElementById('historyModalTitle').textContent = `${member.name} — Leave history`;
+  document.getElementById('historyModalBody').innerHTML = `
+    <div style="margin-bottom:14px; padding:12px 14px; background:var(--surface-alt); border-radius:8px;">
+      <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em;">Current balance</div>
+      <div style="font-family:'JetBrains Mono',monospace; font-size:22px; font-weight:600; color:var(--accent);">${currentLeaveBalance(member).toFixed(2)} days</div>
+    </div>
+    <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin:14px 0 8px;">Requests</h4>
+    <ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; font-size:12.5px;">${reqHtml}</ul>
+    <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin:18px 0 8px;">Admin adjustments</h4>
+    <ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; font-size:12.5px;">${adjHtml}</ul>
+  `;
+  modal.classList.add('open');
+
+  // Wire remove-adjustment buttons
+  modal.querySelectorAll('.remove-adj-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const li = e.target.closest('li');
+      const adjId = li.dataset.adjId;
+      if(!adjId) return;
+      if(!confirm('Remove this adjustment? It will be permanently deleted.')) return;
+      member.adjustments = (member.adjustments || []).filter(a => a.id !== adjId);
+      scheduleSave();
+      openHistoryModal(memberId); // refresh
+      renderApprovals();
+    });
   });
 }
 
@@ -1766,6 +2036,15 @@ async function handleApprovalAction(requestId, action){
     if(!member){
       if(!confirm(`No dashboard member matches "${request.memberName}" — they may have been removed. Approve anyway? (Leave won't be applied to the calendar.)`)) return;
     } else {
+      // For Annual Leave, warn if this approval would put them into negatives.
+      if(request.reason === 'Annual Leave'){
+        const balanceBefore = currentLeaveBalance(member);
+        const balanceAfter = balanceBefore - request.totalDays;
+        if(balanceAfter < 0){
+          if(!confirm(`Heads up: ${member.name}'s current balance is ${balanceBefore.toFixed(2)} days. Approving this ${request.totalDays}-day request will leave them at ${balanceAfter.toFixed(2)} days. Approve anyway?`)) return;
+        }
+      }
+
       // Apply each working day to the member's calendar in the correct month.
       // Split by actual date: each day lands in the month it belongs to.
       (request.workingDates || []).forEach(iso=>{
@@ -1792,7 +2071,13 @@ async function handleApprovalAction(requestId, action){
     });
     scheduleSave(); // persist the leave entries onto the dashboard state
     render();
-    alert(`Approved ${request.memberName}'s ${request.reason} (${request.totalDays} days).${member ? ' Leave entries added to their calendar.' : ''}`);
+    // Show new balance in the confirmation for Annual Leave.
+    let balMsg = '';
+    if(member && request.reason === 'Annual Leave'){
+      const newBal = currentLeaveBalance(member);
+      balMsg = ` New balance: ${newBal.toFixed(2)} days.`;
+    }
+    alert(`Approved ${request.memberName}'s ${request.reason} (${request.totalDays} days).${member ? ' Leave entries added to their calendar.' : ''}${balMsg}`);
   } else if(action === 'decline'){
     const note = prompt(`Decline ${request.memberName}'s leave request? Optionally add a note back to them:`);
     if(note === null) return; // cancelled
@@ -1909,6 +2194,8 @@ async function startLeaveForm(){
 
   let leaveDb;
   let leaveMembers = [];
+  let leaveMembersFull = []; // full member records (with balance data)
+  let approvedRequests = []; // approved Annual Leave from the leaveRequests collection
 
   try{
     if(!FIREBASE_ENABLED){
@@ -1925,15 +2212,23 @@ async function startLeaveForm(){
       return;
     }
     const remoteState = stateDoc.data();
-    leaveMembers = (remoteState.members || [])
+    leaveMembersFull = (remoteState.members || [])
+      .filter(m => m.name && m.name.trim().length > 0);
+    leaveMembers = leaveMembersFull
       .map(m => ({id: m.id, name: m.name}))
-      .filter(m => m.name && m.name.trim().length > 0)
       .sort((a,b)=> a.name.localeCompare(b.name));
 
     if(leaveMembers.length === 0){
       showStatus('error', 'No team members configured yet. Ask an admin to set the team up first.');
       return;
     }
+
+    // Load approved Annual Leave requests so we can calculate accurate balances.
+    const reqSnap = await leaveDb.collection('leaveRequests')
+      .where('status', '==', 'approved')
+      .where('reason', '==', 'Annual Leave')
+      .get();
+    approvedRequests = reqSnap.docs.map(d => ({id: d.id, ...d.data()}));
 
     els.member.innerHTML = '<option value="">— select your name —</option>' +
       leaveMembers.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
@@ -1945,6 +2240,70 @@ async function startLeaveForm(){
     showStatus('error', 'Could not load the form: ' + err.message);
     return;
   }
+
+  // Local balance helpers using the fetched data (mirror of the dashboard's).
+  const localMonthsBetween = (fromDate, toDate) => {
+    if(toDate <= fromDate) return 0;
+    let count = 0;
+    let y = fromDate.getUTCFullYear(), mo = fromDate.getUTCMonth() + 1;
+    if(mo > 11){ mo = 0; y++; }
+    let cursor = new Date(Date.UTC(y, mo, 1));
+    while(cursor <= toDate){
+      count++;
+      mo++;
+      if(mo > 11){ mo = 0; y++; }
+      cursor = new Date(Date.UTC(y, mo, 1));
+    }
+    return count;
+  };
+  const localBalanceAt = (member, asOfDate) => {
+    const opening = parseFloat(member.openingBalance) || 0;
+    const anchor = member.openingBalanceDate
+      ? new Date(member.openingBalanceDate + 'T00:00:00Z')
+      : asOfDate;
+    const accrued = localMonthsBetween(anchor, asOfDate) * 1.25;
+    const iso = asOfDate.toISOString().slice(0,10);
+    // Count all approved Annual Leave immediately once approved,
+    // regardless of when the leave falls — matches the dashboard's logic.
+    const memberName = (member.name || '').trim().toLowerCase();
+    const used = approvedRequests
+      .filter(r => r.memberId === member.id || (r.memberName || '').trim().toLowerCase() === memberName)
+      .reduce((s, r) => s + (r.totalDays || 0), 0);
+    const adj = (member.adjustments || [])
+      .filter(a => !a.effectiveDate || a.effectiveDate <= iso)
+      .reduce((s, a) => s + (parseFloat(a.days) || 0), 0);
+    return opening + accrued - used + adj;
+  };
+
+  const updateBalanceInfo = () => {
+    const box = document.getElementById('leaveBalanceInfo');
+    const memberId = els.member.value;
+    const member = leaveMembersFull.find(m => m.id === memberId);
+    if(!member){ box.style.display = 'none'; return; }
+
+    const today = new Date();
+    const currentBal = localBalanceAt(member, today);
+    let html = `<strong style="color:var(--text);">Annual leave available today: <span style="color:${currentBal < 0 ? 'var(--red)' : currentBal < 5 ? 'var(--amber)' : 'var(--green)'};">${currentBal.toFixed(2)} days</span></strong>`;
+
+    // If leave dates are set and start date is in the future, show projected balance.
+    const s = els.start.value;
+    if(s){
+      const startDate = new Date(s + 'T00:00:00Z');
+      if(startDate > today){
+        const projected = localBalanceAt(member, startDate);
+        html += `<div style="margin-top:4px; font-size:11.5px;">Projected on ${s}: <strong style="color:var(--accent);">${projected.toFixed(2)} days</strong> (with monthly accrual)</div>`;
+      }
+    }
+    if(!member.openingBalanceDate){
+      html += `<div style="margin-top:4px; font-size:11px; color:var(--amber);">⚠ No opening balance set — accrual can't be calculated. Ask an admin.</div>`;
+    }
+    box.innerHTML = html;
+    box.style.display = 'block';
+  };
+  els.member.addEventListener('change', updateBalanceInfo);
+  // Also update projected balance when the start date changes
+  const originalStartHandler = els.start.onchange;
+  els.start.addEventListener('change', updateBalanceInfo);
 
   const updateSummary = () => {
     const s = els.start.value, e = els.end.value;
@@ -1981,9 +2340,23 @@ async function startLeaveForm(){
       });
       els.breakdown.textContent = parts.length > 1 ? 'Split: ' + parts.join(' · ') : 'Weekends & SA public holidays excluded.';
     }
+
+    // If they picked Annual Leave and a name, warn if they're over their projected balance.
+    const memberId = els.member.value;
+    const member = leaveMembersFull.find(m => m.id === memberId);
+    const reason = els.reason.value;
+    if(member && reason === 'Annual Leave' && result.days > 0){
+      const projected = localBalanceAt(member, startDate);
+      if(result.days > projected){
+        els.summary.classList.add('warn');
+        const short = (result.days - projected).toFixed(2);
+        els.breakdown.textContent += ` · ⚠ Exceeds balance by ${short}d — admin will decide.`;
+      }
+    }
   };
   els.start.addEventListener('change', updateSummary);
   els.end.addEventListener('change', updateSummary);
+  els.reason.addEventListener('change', updateSummary);
 
   els.form.addEventListener('submit', async (e)=>{
     e.preventDefault();
