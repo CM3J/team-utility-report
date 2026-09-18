@@ -1678,8 +1678,8 @@ document.getElementById('exportCsvBtn').addEventListener('click', ()=>{
      openingBalanceDate  — 'YYYY-MM-DD', the anchor
      adjustments         — array of {days, reason, effectiveDate, at, id}
                            days can be +ve (grant) or -ve (deduct)
-   Accrual: +1.25 days on the 1st of every month starting the month
-            AFTER openingBalanceDate. No cap.
+   Accrual: +1.25 days on the 25th of every month starting after
+            openingBalanceDate. No cap.
    Deductions: sum of days from APPROVED leave requests where
                reason === 'Annual Leave'. Sick / Family / Other
                do not touch the balance.
@@ -1687,19 +1687,25 @@ document.getElementById('exportCsvBtn').addEventListener('click', ()=>{
 const MONTHLY_ACCRUAL = 1.25;
 
 function monthsBetween(fromDate, toDate){
-  // Count of first-of-month accrual events strictly AFTER fromDate and on or before toDate.
+  // Count of accrual events (25th of each month) strictly AFTER fromDate
+  // and on or before toDate.
   if(toDate <= fromDate) return 0;
   let count = 0;
-  // Start walking from the first of the month after fromDate.
+  // First candidate accrual date: the 25th of fromDate's month if fromDate is
+  // before that 25th; otherwise the 25th of the following month.
   let year = fromDate.getUTCFullYear();
-  let month = fromDate.getUTCMonth() + 1;
-  if(month > 11){ month = 0; year++; }
-  let cursor = new Date(Date.UTC(year, month, 1));
+  let month = fromDate.getUTCMonth();
+  let cursor = new Date(Date.UTC(year, month, 25));
+  if(cursor <= fromDate){
+    month++;
+    if(month > 11){ month = 0; year++; }
+    cursor = new Date(Date.UTC(year, month, 25));
+  }
   while(cursor <= toDate){
     count++;
     month++;
     if(month > 11){ month = 0; year++; }
-    cursor = new Date(Date.UTC(year, month, 1));
+    cursor = new Date(Date.UTC(year, month, 25));
   }
   return count;
 }
@@ -1928,7 +1934,7 @@ function openOpeningBalanceModal(memberId){
   if(days === null) return;
   const parsedDays = parseFloat(days);
   if(isNaN(parsedDays)){ alert('Enter a valid number.'); return; }
-  const anchor = prompt(`Effective date for that opening balance (YYYY-MM-DD).\nAccrual of +${MONTHLY_ACCRUAL} days/month starts from the month AFTER this date.`, member.openingBalanceDate || new Date().toISOString().slice(0,10));
+  const anchor = prompt(`Effective date for that opening balance (YYYY-MM-DD).\nAccrual of +${MONTHLY_ACCRUAL} days lands on the 25th of every month after this date.`, member.openingBalanceDate || new Date().toISOString().slice(0,10));
   if(anchor === null) return;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(anchor.trim())){ alert('Date must be YYYY-MM-DD.'); return; }
   member.openingBalance = parsedDays;
@@ -2245,14 +2251,18 @@ async function startLeaveForm(){
   const localMonthsBetween = (fromDate, toDate) => {
     if(toDate <= fromDate) return 0;
     let count = 0;
-    let y = fromDate.getUTCFullYear(), mo = fromDate.getUTCMonth() + 1;
-    if(mo > 11){ mo = 0; y++; }
-    let cursor = new Date(Date.UTC(y, mo, 1));
+    let y = fromDate.getUTCFullYear(), mo = fromDate.getUTCMonth();
+    let cursor = new Date(Date.UTC(y, mo, 25));
+    if(cursor <= fromDate){
+      mo++;
+      if(mo > 11){ mo = 0; y++; }
+      cursor = new Date(Date.UTC(y, mo, 25));
+    }
     while(cursor <= toDate){
       count++;
       mo++;
       if(mo > 11){ mo = 0; y++; }
-      cursor = new Date(Date.UTC(y, mo, 1));
+      cursor = new Date(Date.UTC(y, mo, 25));
     }
     return count;
   };
