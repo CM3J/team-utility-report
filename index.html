@@ -1673,22 +1673,54 @@ document.getElementById('exportCsvBtn').addEventListener('click', ()=>{
 /* =========================================================
    LEAVE BALANCE CALCULATIONS
    ---------------------------------------------------------
-   Per member (per leave type — currently Annual + Sick):
+   Annual leave:
      openingBalance          — Annual opening (days)
      openingBalanceDate      — Annual anchor for accrual
      adjustments             — Annual admin adjustments [{days, reason, effectiveDate, at, id}]
-     sickOpeningBalance      — Sick opening (days)
-     sickAdjustments         — Sick admin adjustments (same shape)
-
    Annual accrual: +1.25 days on the 25th of every month after the
                    Annual anchor. No cap.
-   Sick accrual: none — flat balance until admin manually adjusts.
+
+   Sick leave (South African BCEA: 30 days per 36-month cycle):
+     sickOpeningBalance      — Sick opening (days) — kept as-is,
+                               a flat number the admin sets manually.
+     sickCycleStartDate      — 'YYYY-MM-DD' — start of the current cycle.
+                               Cycle end = start + 36 months. On the end
+                               date, cycle rolls forward by 36 months and
+                               the used tally resets (auto, no manual
+                               action). Opening balance and adjustments
+                               are unaffected by the reset — only the
+                               approved-Sick-Leave tally resets.
+     sickAdjustments         — Sick admin adjustments (same shape).
 
    Deductions: sum of totalDays from APPROVED requests where reason
-               matches the leave type. Family / Other don't touch
-               any balance.
+               matches the leave type. For sick leave, only requests
+               inside the CURRENT cycle count toward the balance.
+               Family / Other don't touch any balance.
    ========================================================= */
 const MONTHLY_ACCRUAL = 1.25;
+const SICK_CYCLE_MONTHS = 36;
+
+function addMonthsToISO(dateStr, months){
+  const [y, m, d] = dateStr.split('-').map(n => parseInt(n, 10));
+  const base = new Date(Date.UTC(y, m - 1, d));
+  base.setUTCMonth(base.getUTCMonth() + months);
+  return base;
+}
+
+function currentSickCycle(member, asOfDate){
+  // Returns {start, end} Date objects for the cycle that contains asOfDate,
+  // rolling forward from sickCycleStartDate in 36-month chunks as needed.
+  // Returns null if no cycle start date is set.
+  if(!member.sickCycleStartDate) return null;
+  let start = new Date(member.sickCycleStartDate + 'T00:00:00Z');
+  let end = addMonthsToISO(member.sickCycleStartDate, SICK_CYCLE_MONTHS);
+  while(asOfDate >= end){
+    start = new Date(end);
+    end = new Date(end);
+    end.setUTCMonth(end.getUTCMonth() + SICK_CYCLE_MONTHS);
+  }
+  return { start, end };
+}
 
 function monthsBetween(fromDate, toDate){
   // Count of accrual events (25th of each month) strictly AFTER fromDate
@@ -1727,8 +1759,30 @@ function annualLeaveDaysUsed(memberId){
   return leaveDaysUsedByType(memberId, 'Annual Leave');
 }
 
+function sickLeaveDaysUsedInCycle(memberId, cycle){
+  // Sum totalDays of APPROVED Sick Leave whose startDate falls inside the cycle
+  // window [start, end). If no cycle, fall back to all approved sick leave.
+  const member = state.members.find(m => m.id === memberId);
+  const memberName = member ? member.name.trim().toLowerCase() : null;
+  return leaveRequests
+    .filter(r => r.status === 'approved'
+             && r.reason === 'Sick Leave'
+             && (r.memberId === memberId || (memberName && (r.memberName || '').trim().toLowerCase() === memberName)))
+    .filter(r => {
+      if(!cycle) return true;
+      const startIso = r.startDate;
+      if(!startIso) return false;
+      const startD = new Date(startIso + 'T00:00:00Z');
+      return startD >= cycle.start && startD < cycle.end;
+    })
+    .reduce((sum, r) => sum + (r.totalDays || 0), 0);
+}
+
+// Backwards-compat helper (used by the leave form's projected balance).
 function sickLeaveDaysUsed(memberId){
-  return leaveDaysUsedByType(memberId, 'Sick Leave');
+  const member = state.members.find(m => m.id === memberId);
+  const cycle = member ? currentSickCycle(member, new Date()) : null;
+  return sickLeaveDaysUsedInCycle(memberId, cycle);
 }
 
 function adjustmentsSum(adjustmentsArr, asOfDate){
@@ -1751,9 +1805,11 @@ function leaveBalanceAt(member, asOfDate){
 }
 
 function sickBalanceAt(member, asOfDate){
-  // Sick leave balance: flat opening + adjustments − approved sick leave.
+  // Sick leave balance for the CURRENT cycle:
+  //   opening + adjustments (all-time) − sick leave used inside current cycle
   const opening = parseFloat(member.sickOpeningBalance) || 0;
-  const used = sickLeaveDaysUsed(member.id);
+  const cycle = currentSickCycle(member, asOfDate);
+  const used = sickLeaveDaysUsedInCycle(member.id, cycle);
   const adjustments = adjustmentsSum(member.sickAdjustments, asOfDate);
   return opening - used + adjustments;
 }
@@ -1831,9 +1887,28 @@ function renderBalancesPanel(){
     // Sick
     const sickBal = currentSickBalance(m);
     const sickOpening = (parseFloat(m.sickOpeningBalance) || 0);
-    const sickUsed = sickLeaveDaysUsed(m.id);
+    const cycle = currentSickCycle(m, today);
+    const sickUsed = sickLeaveDaysUsedInCycle(m.id, cycle);
     const sickAdj = adjustmentsSum(m.sickAdjustments, today);
     const sickColour = sickBal < 0 ? 'var(--red)' : (sickBal < 3 ? 'var(--amber)' : 'var(--green)');
+
+    // Cycle window display
+    const cycleStartLabel = m.sickCycleStartDate || '(not set)';
+    let resetLabel = '(no cycle)';
+    let resetSub = '';
+    if(cycle){
+      resetLabel = cycle.end.toISOString().slice(0,10);
+      const msPerDay = 24 * 60 * 60 * 1000;
+      const daysLeft = Math.round((cycle.end - today) / msPerDay);
+      if(daysLeft >= 60){
+        const monthsLeft = Math.round(daysLeft / 30);
+        resetSub = `in ${monthsLeft} months`;
+      } else if(daysLeft > 0){
+        resetSub = `in ${daysLeft} days`;
+      } else {
+        resetSub = 'resets today';
+      }
+    }
 
     return `
       <tr data-mid="${m.id}">
@@ -1854,7 +1929,14 @@ function renderBalancesPanel(){
         <td class="num-cell" title="Sick opening balance">
           <span class="sick-opening-editable" style="cursor:pointer; border-bottom:1px dashed var(--text-faint);">${sickOpening} d</span>
         </td>
-        <td class="num-cell" style="color:var(--red);" title="Approved Sick Leave days">−${sickUsed.toFixed(2)}</td>
+        <td class="num-cell" title="Start of current sick leave cycle (30 days per 36-month period)">
+          <span class="sick-cycle-editable" style="cursor:pointer; border-bottom:1px dashed var(--text-faint);">${cycleStartLabel}</span>
+        </td>
+        <td class="num-cell" title="Cycle resets on this date and the used tally goes back to zero" style="color:var(--text-muted);">
+          ${resetLabel}
+          ${resetSub ? `<div style="font-size:10px; color:var(--text-faint); font-family:'JetBrains Mono',monospace;">${resetSub}</div>` : ''}
+        </td>
+        <td class="num-cell" style="color:var(--red);" title="Approved Sick Leave days inside the current cycle">−${sickUsed.toFixed(2)}</td>
         <td class="num-cell" style="color:${sickAdj >= 0 ? 'var(--green)' : 'var(--red)'};" title="Sum of admin sick adjustments">${sickAdj >= 0 ? '+' : ''}${sickAdj.toFixed(2)}</td>
 
         <td>
@@ -1869,7 +1951,7 @@ function renderBalancesPanel(){
   panel.innerHTML = `
     <div style="padding:14px 20px; border-bottom:1px solid var(--border);">
       <h3 style="font-size:13px; font-weight:600; margin:0 0 4px;">Leave Balances</h3>
-      <div style="font-size:11px; color:var(--text-muted);">Annual accrues at +${MONTHLY_ACCRUAL} days on the 25th of each month. Sick is flat until you manually adjust. Family / Other don't touch either balance.</div>
+      <div style="font-size:11px; color:var(--text-muted);">Annual accrues at +${MONTHLY_ACCRUAL} days on the 25th of each month. Sick follows SA BCEA: 30 days per 36-month cycle, auto-resets on cycle end. Family / Other don't touch either balance.</div>
     </div>
     <div style="overflow-x:auto;">
     <table style="width:100%; border-collapse:collapse;">
@@ -1878,7 +1960,7 @@ function renderBalancesPanel(){
           <th rowspan="2" style="text-align:left;">Member</th>
           <th colspan="5" style="text-align:center; border-bottom:1px solid var(--border);">Annual Leave</th>
           <th rowspan="2" style="border-left:1px solid var(--border);"></th>
-          <th colspan="4" style="text-align:center; border-bottom:1px solid var(--border);">Sick Leave</th>
+          <th colspan="6" style="text-align:center; border-bottom:1px solid var(--border);">Sick Leave</th>
           <th rowspan="2"></th>
         </tr>
         <tr>
@@ -1889,11 +1971,13 @@ function renderBalancesPanel(){
           <th style="text-align:left;">Adj.</th>
           <th style="text-align:left;">Balance</th>
           <th style="text-align:left;">Opening</th>
-          <th style="text-align:left;">Used</th>
+          <th style="text-align:left;">Cycle start</th>
+          <th style="text-align:left;">Resets on</th>
+          <th style="text-align:left;">Used (cycle)</th>
           <th style="text-align:left;">Adj.</th>
         </tr>
       </thead>
-      <tbody>${rows || '<tr><td colspan="12" class="empty-state">No team members yet.</td></tr>'}</tbody>
+      <tbody>${rows || '<tr><td colspan="14" class="empty-state">No team members yet.</td></tr>'}</tbody>
     </table>
     </div>
   `;
@@ -1905,6 +1989,7 @@ function renderBalancesPanel(){
     tr.querySelector('.history-btn').addEventListener('click', () => openHistoryModal(mid));
     tr.querySelector('.opening-editable').addEventListener('click', () => openOpeningBalanceModal(mid, 'annual'));
     tr.querySelector('.sick-opening-editable').addEventListener('click', () => openOpeningBalanceModal(mid, 'sick'));
+    tr.querySelector('.sick-cycle-editable').addEventListener('click', () => openSickCycleModal(mid));
   });
 }
 
@@ -1978,6 +2063,27 @@ function renderRequestsPanel(){
 }
 
 /* ---------- Balance-related modals ---------- */
+
+function openSickCycleModal(memberId){
+  const member = state.members.find(m => m.id === memberId);
+  if(!member) return;
+  const date = prompt(
+    `Sick leave cycle start date for ${member.name} (YYYY-MM-DD).\n\n` +
+    `SA BCEA: 30 days per 36-month cycle. On the date entered here + 36 months, ` +
+    `the cycle rolls forward and the "used" tally resets.`,
+    member.sickCycleStartDate || new Date().toISOString().slice(0,10)
+  );
+  if(date === null) return;
+  const trimmed = date.trim();
+  if(trimmed && !/^\d{4}-\d{2}-\d{2}$/.test(trimmed)){ alert('Date must be YYYY-MM-DD (or blank to clear).'); return; }
+  if(trimmed){
+    member.sickCycleStartDate = trimmed;
+  } else {
+    delete member.sickCycleStartDate;
+  }
+  scheduleSave();
+  renderApprovals();
+}
 
 function openOpeningBalanceModal(memberId, type){
   const member = state.members.find(m => m.id === memberId);
@@ -2385,9 +2491,33 @@ async function startLeaveForm(){
     const opening = parseFloat(member.sickOpeningBalance) || 0;
     const iso = asOfDate.toISOString().slice(0,10);
     const memberName = (member.name || '').trim().toLowerCase();
+
+    // Work out the current sick cycle for this asOfDate using the same
+    // 36-month roll-forward logic as the dashboard.
+    let cycle = null;
+    if(member.sickCycleStartDate){
+      const [y, m, d] = member.sickCycleStartDate.split('-').map(n => parseInt(n, 10));
+      let start = new Date(Date.UTC(y, m - 1, d));
+      let end = new Date(Date.UTC(y, m - 1, d));
+      end.setUTCMonth(end.getUTCMonth() + 36);
+      while(asOfDate >= end){
+        start = new Date(end);
+        end = new Date(end);
+        end.setUTCMonth(end.getUTCMonth() + 36);
+      }
+      cycle = { start, end };
+    }
+
     const used = approvedRequests
       .filter(r => r.reason === 'Sick Leave' && (r.memberId === member.id || (r.memberName || '').trim().toLowerCase() === memberName))
+      .filter(r => {
+        if(!cycle) return true;
+        if(!r.startDate) return false;
+        const sd = new Date(r.startDate + 'T00:00:00Z');
+        return sd >= cycle.start && sd < cycle.end;
+      })
       .reduce((s, r) => s + (r.totalDays || 0), 0);
+
     const adj = (member.sickAdjustments || [])
       .filter(a => !a.effectiveDate || a.effectiveDate <= iso)
       .reduce((s, a) => s + (parseFloat(a.days) || 0), 0);
